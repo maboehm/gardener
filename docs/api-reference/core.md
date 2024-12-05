@@ -3436,7 +3436,7 @@ CRIName
 <p>CRIName is a type alias for the CRI name string.</p>
 </p>
 <h3 id="core.gardener.cloud/v1beta1.Capabilities">Capabilities
-(<code>map[string]github.com/gardener/gardener/pkg/apis/core/v1beta1.CapabilityValues</code> alias)</p></h3>
+(<code>map[string]..CapabilityValues</code> alias)</p></h3>
 <p>
 (<em>Appears on:</em>
 <a href="#core.gardener.cloud/v1beta1.CapabilitySet">CapabilitySet</a>, 
@@ -5854,9 +5854,7 @@ to the internal API version in the new representation.</p>
 <td>
 <code>values</code></br>
 <em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#json-v1-apiextensions-k8s-io">
-Kubernetes apiextensions/v1.JSON
-</a>
+github.com/gardener/gardener/pkg/apis/types/helm.Values
 </em>
 </td>
 <td>

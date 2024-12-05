@@ -119,9 +119,7 @@ resources.</p>
 <td>
 <code>values</code></br>
 <em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.27/#json-v1-apiextensions-k8s-io">
-Kubernetes apiextensions/v1.JSON
-</a>
+github.com/gardener/gardener/pkg/apis/types/helm.Values
 </em>
 </td>
 <td>
