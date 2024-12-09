@@ -138,7 +138,12 @@ func (r *Reconciler) reconcileSecret(ctx context.Context, log logr.Logger, sourc
 	if targetSecret := getTargetSecretFromAnnotations(sourceSecret.Annotations); targetSecret != nil {
 		log.Info("Populating the token to the target secret", "targetSecret", client.ObjectKeyFromObject(targetSecret))
 
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.TargetClient, targetSecret, r.populateToken(log, targetSecret, token)); err != nil {
+		targetClient := r.TargetClient
+		if sourceSecret.Annotations[resourcesv1alpha1.TokenRequestorTargetSecretCluster] == "source" {
+			targetClient = r.SourceClient
+		}
+
+		if _, err := controllerutil.CreateOrUpdate(ctx, targetClient, targetSecret, r.populateToken(log, targetSecret, token)); err != nil {
 			return err
 		}
 

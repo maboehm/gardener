@@ -64,6 +64,8 @@ const (
 	// for the invalidation of the static ServiceAccount token.
 	StaticTokenConsider = "token-invalidator.resources.gardener.cloud/consider"
 
+	TokenRequestorTargetSecretCluster = "token-requestor.resources.gardener.cloud/target-secret-cluster"
+
 	// TokenRequestorTargetSecretName is a constant for an annotation on a Secret which indicates that the token requestor
 	// shall sync the token to a secret in the target cluster with the given name.
 	TokenRequestorTargetSecretName = "token-requestor.resources.gardener.cloud/target-secret-name"
