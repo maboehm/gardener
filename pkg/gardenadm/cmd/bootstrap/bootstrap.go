@@ -117,7 +117,6 @@ func run(ctx context.Context, opts *Options) error {
 			Fn:           flow.TaskFn(b.EnsureCustomResourceDefinitionsReady),
 			Interval:     time.Second,
 			Timeout:      time.Minute,
-			Reporter:     reporter,
 			Dependencies: flow.NewTaskIDs(reconcileCustomResourceDefinitions),
 		})
 		reconcileClusterResource = g.Add(flow.Task{
@@ -285,7 +284,6 @@ func run(ctx context.Context, opts *Options) error {
 			Fn:           flow.TaskFn(b.ConnectToControlPlaneMachine),
 			Interval:     5 * time.Second,
 			Timeout:      5 * time.Minute,
-			Reporter:     reporter,
 			Dependencies: flow.NewTaskIDs(listControlPlaneMachines, deployBastion),
 		})
 		copyManifests = g.Add(flow.Task{

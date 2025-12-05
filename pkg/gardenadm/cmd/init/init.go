@@ -100,7 +100,6 @@ func run(ctx context.Context, opts *Options) error {
 			Fn:           flow.TaskFn(b.EnsureCustomResourceDefinitionsReady),
 			Interval:     time.Second,
 			Timeout:      time.Minute,
-			Reporter:     reporter,
 			Dependencies: flow.NewTaskIDs(reconcileCustomResourceDefinitions),
 		})
 		reconcileClusterResource = g.Add(flow.Task{
@@ -125,7 +124,6 @@ func run(ctx context.Context, opts *Options) error {
 			Fn:           flow.TaskFn(b.ApproveNodeAgentCertificateSigningRequest),
 			Interval:     2 * time.Second,
 			Timeout:      time.Minute,
-			Reporter:     reporter,
 			Dependencies: flow.NewTaskIDs(activateGardenerNodeAgent),
 		})
 		deployGardenerResourceManager = g.Add(flow.Task{
@@ -241,7 +239,6 @@ func run(ctx context.Context, opts *Options) error {
 			}),
 			Interval:     5 * time.Second,
 			Timeout:      30 * time.Second,
-			Reporter:     reporter,
 			SkipIf:       podNetworkAvailable,
 			Dependencies: flow.NewTaskIDs(waitUntilGardenerResourceManagerInPodNetworkReady),
 		})
@@ -455,13 +452,12 @@ func bootstrapControlPlane(ctx context.Context, opts *Options) (*botanist.Garden
 		})
 		initializeClientSet = g.Add(flow.RetryableTask{
 			Name: "Initializing connection to Kubernetes control plane",
-			Fn: flow.TaskFn(func(_ context.Context) error {
+			Fn: func(_ context.Context) error {
 				clientSet, err = b.CreateClientSet(ctx)
 				return err
-			}),
+			},
 			Interval:     2 * time.Second,
 			Timeout:      2 * time.Minute,
-			Reporter:     reporter,
 			Dependencies: flow.NewTaskIDs(applyOperatingSystemConfig),
 		})
 		_ = g.Add(flow.Task{

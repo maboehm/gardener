@@ -54,7 +54,6 @@ type RetryableTask struct {
 	SkipIf       bool
 	Dependencies TaskIDs
 
-	Reporter TaskRetryReporter
 	Timeout  time.Duration
 	Interval time.Duration
 }
@@ -67,20 +66,20 @@ func (t RetryableTask) GetID() TaskID {
 // Spec returns the TaskSpec of a task.
 func (t RetryableTask) Spec() *TaskSpec {
 	return &TaskSpec{
-		Fn: func(ctx context.Context) error {
+		Fn: &RetryableTaskFn{Fn: func(ctx context.Context, id TaskID, reporter TaskRetryReporter) error {
 			ctx, cancel := context.WithTimeout(ctx, t.Timeout)
 			defer cancel()
 
 			return retry.Until(ctx, t.Interval, func(ctx context.Context) (done bool, err error) {
 				if err := t.Fn(ctx); err != nil {
-					if t.Reporter != nil {
-						t.Reporter.ReportRetry(ctx, t.GetID(), err)
+					if reporter != nil {
+						reporter.ReportRetry(ctx, id, err)
 					}
 					return retry.MinorError(err)
 				}
 				return retry.Ok()
 			})
-		},
+		}},
 		Skip:         t.SkipIf,
 		Dependencies: t.Dependencies.Copy(),
 	}
@@ -89,7 +88,7 @@ func (t RetryableTask) Spec() *TaskSpec {
 // TaskSpec is functional body of a Task, consisting only of the payload function and
 // the dependencies of the Task.
 type TaskSpec struct {
-	Fn           TaskFn
+	Fn           taskExecuter
 	Skip         bool
 	Dependencies TaskIDs
 }
@@ -132,7 +131,7 @@ func (g *Graph) Add(task Tasker) TaskID {
 			panic(fmt.Sprintf("Task %q is missing dependency %q", id, dependencyID))
 		}
 	}
-	g.tasks[id] = task.Spec()
+	g.tasks[id] = spec
 	return id
 }
 

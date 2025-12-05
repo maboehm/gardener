@@ -22,6 +22,30 @@ var (
 // TaskFn is a payload function of a task.
 type TaskFn func(ctx context.Context) error
 
+func (fn TaskFn) Execute(ctx context.Context) error {
+	return fn(ctx)
+}
+
+type taskExecuter interface {
+	Execute(ctx context.Context) error
+}
+
+type RetryableTaskFn struct {
+	Fn func(ctx context.Context, id TaskID, reporter TaskRetryReporter) error
+
+	reporter TaskRetryReporter
+	id       TaskID
+}
+
+func (fn RetryableTaskFn) Execute(ctx context.Context) error {
+	return fn.Fn(ctx, fn.id, fn.reporter)
+}
+
+func (fn *RetryableTaskFn) SetReporter(id TaskID, reporter TaskRetryReporter) {
+	fn.reporter = reporter
+	fn.id = id
+}
+
 // RecoverFn is a function that can recover an error.
 type RecoverFn func(ctx context.Context, err error) error
 

@@ -73,7 +73,7 @@ func (f *Flow) Len() int {
 type node struct {
 	targetIDs TaskIDs
 	required  int
-	fn        TaskFn
+	fn        taskExecuter
 	skip      bool
 }
 
@@ -231,7 +231,12 @@ func (e *execution) runNode(ctx context.Context, id TaskID) {
 	go func() {
 		start := e.flow.clock.Now().UTC()
 		log.V(1).Info("Started")
-		err := node.fn(ctx)
+		if retryable, ok := node.fn.(*RetryableTaskFn); ok {
+			if tr, ok2 := e.progressReporter.(TaskRetryReporter); ok2 {
+				retryable.SetReporter(id, tr)
+			}
+		}
+		err := node.fn.Execute(ctx)
 		duration := e.flow.clock.Now().UTC().Sub(start)
 		log.V(1).Info("Finished", "duration", duration)
 

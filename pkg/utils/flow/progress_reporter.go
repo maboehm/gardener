@@ -27,7 +27,7 @@ type TaskRetryReporter interface {
 	ProgressReporter
 
 	// ReportRetry reports that the task failed with the given error and will be retried.
-	ReportRetry(ctx context.Context, id TaskID, err error)
+	ReportRetry(ctx context.Context, randomID TaskID, err error)
 }
 
 // MakeDescription returns a description based on the stats.
