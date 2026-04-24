@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_delete.go --func-name delete --destination ../../../../../docs/development/flow-graphs/operator-extension-delete.md
+
 package extension
 
 import (

@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_reconcile.go --func-name runReconcileShootFlow --destination ../../../../../docs/development/flow-graphs/gardenlet-shoot-reconcile.md
+
 package shoot
 
 import (

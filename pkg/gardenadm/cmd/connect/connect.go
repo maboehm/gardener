@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input connect.go --func-name run --destination ../../../../docs/development/flow-graphs/gardenadm-connect.md
+
 package connect
 
 import (

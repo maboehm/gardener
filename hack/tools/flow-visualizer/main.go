@@ -8,10 +8,16 @@
 //
 // Usage:
 //
-//	go run ./hack/tools/flow-visualizer/main.go <file.go> [function-name]
+//	flow-visualizer [--markdown] <file.go> [function-name]
 //
 // If [function-name] is given only the graph(s) constructed inside that
 // function are emitted; otherwise every graph in the file is emitted.
+//
+// Flags:
+//
+//	--markdown  Wrap the Mermaid output in a Markdown document with a title
+//	            heading and a fenced code block.  Useful for writing directly
+//	            to a .md file that GitHub will render natively.
 package main
 
 import (
@@ -130,15 +136,29 @@ func (g *graph) hasSyncPointVar(varName string) bool {
 // ----------------------------------------------------------------------------
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: flow-visualizer <file.go> [function-name]")
+	args := os.Args[1:]
+
+	// Parse --markdown flag.
+	markdownMode := false
+	filtered := args[:0]
+	for _, a := range args {
+		if a == "--markdown" {
+			markdownMode = true
+		} else {
+			filtered = append(filtered, a)
+		}
+	}
+	args = filtered
+
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Usage: flow-visualizer [--markdown] <file.go> [function-name]")
 		os.Exit(1)
 	}
 
-	filePath := os.Args[1]
+	filePath := args[0]
 	filterFunc := ""
-	if len(os.Args) >= 3 {
-		filterFunc = os.Args[2]
+	if len(args) >= 2 {
+		filterFunc = args[1]
 	}
 
 	fset := token.NewFileSet()
@@ -154,11 +174,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	for i, g := range graphs {
-		if i > 0 {
-			fmt.Println()
+	if markdownMode {
+		for i, g := range graphs {
+			if i > 0 {
+				fmt.Println()
+			}
+			emitMarkdown(g)
 		}
-		emitMermaid(g)
+	} else {
+		for i, g := range graphs {
+			if i > 0 {
+				fmt.Println()
+			}
+			emitMermaid(g)
+		}
 	}
 }
 
@@ -561,6 +590,17 @@ func emitMermaid(g *graph) {
 			fmt.Printf("    %s --> %s\n", entry.mermaidID, t.mermaidID)
 		}
 	}
+}
+
+// emitMarkdown wraps the Mermaid output in a Markdown document suitable for
+// committing to the repository and rendering natively on GitHub.
+func emitMarkdown(g *graph) {
+	fmt.Println("<!-- This file is auto-generated via `make generate`. DO NOT EDIT. -->")
+	fmt.Println()
+	fmt.Printf("# %s\n\n", g.name)
+	fmt.Println("```mermaid")
+	emitMermaid(g)
+	fmt.Println("```")
 }
 
 // prettifySyncPointName converts camelCase/mixed variable names into a more

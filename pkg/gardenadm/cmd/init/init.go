@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input init.go --func-name run --destination ../../../../docs/development/flow-graphs/gardenadm-init.md
+//go:generate flow-visualizer --markdown --input init.go --func-name bootstrapControlPlane --destination ../../../../docs/development/flow-graphs/gardenadm-init-bootstrap.md
+
 package init
 
 import (

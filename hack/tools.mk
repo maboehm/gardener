@@ -45,6 +45,7 @@ PROMTOOL                   := $(TOOLS_BIN_DIR)/promtool
 PROTOC                     := $(TOOLS_BIN_DIR)/protoc
 PROTOC_GEN_GOGO            := $(TOOLS_BIN_DIR)/protoc-gen-gogo
 REPORT_COLLECTOR           := $(TOOLS_BIN_DIR)/report-collector
+FLOW_VISUALIZER            := $(TOOLS_BIN_DIR)/flow-visualizer
 OIDC_METADATA              := $(TOOLS_BIN_DIR)/oidcmeta
 SETUP_ENVTEST              := $(TOOLS_BIN_DIR)/setup-envtest
 SKAFFOLD                   := $(TOOLS_BIN_DIR)/skaffold
@@ -232,6 +233,14 @@ $(REPORT_COLLECTOR): $(TOOLS_PKG_PATH)/report-collector/*.go
 else
 $(REPORT_COLLECTOR): go.mod
 	go build -o $(REPORT_COLLECTOR) github.com/gardener/gardener/hack/tools/report-collector
+endif
+
+ifeq ($(IS_GARDENER),true)
+$(FLOW_VISUALIZER): $(TOOLS_PKG_PATH)/flow-visualizer/*.go
+	go build -o $(FLOW_VISUALIZER) $(TOOLS_PKG_PATH)/flow-visualizer
+else
+$(FLOW_VISUALIZER): go.mod
+	go build -o $(FLOW_VISUALIZER) github.com/gardener/gardener/hack/tools/flow-visualizer
 endif
 
 ifeq ($(IS_GARDENER),true)

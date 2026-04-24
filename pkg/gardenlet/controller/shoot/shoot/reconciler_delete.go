@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_delete.go --func-name runDeleteShootFlow --destination ../../../../../docs/development/flow-graphs/gardenlet-shoot-delete.md
+
 package shoot
 
 import (

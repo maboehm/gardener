@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_reconcile.go --func-name reconcile --destination ../../../../../docs/development/flow-graphs/operator-garden-reconcile.md
+//go:generate flow-visualizer --markdown --input reconciler_reconcile.go --func-name runRuntimeSetupFlow --destination ../../../../../docs/development/flow-graphs/operator-garden-runtime-setup.md
+
 package garden
 
 import (

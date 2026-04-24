@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_reconcile.go --func-name runReconcileSeedFlow --destination ../../../../../docs/development/flow-graphs/gardenlet-seed-reconcile.md
+
 package seed
 
 import (

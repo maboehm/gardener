@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 
+//go:generate flow-visualizer --markdown --input reconciler_migrate.go --func-name runMigrateShootFlow --destination ../../../../../docs/development/flow-graphs/gardenlet-shoot-migrate.md
+
 package shoot
 
 import (
