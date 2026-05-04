@@ -32,8 +32,6 @@ flowchart TD
     SettingGardenerResourceManagerReplicasTo2{{"Setting gardener-resource-manager replicas to 2\n[CONDITIONAL]"}}:::conditional
     DeployingGardenerResourceManager{{"Deploying gardener-resource-manager\n[CONDITIONAL]"}}:::conditional
     WaitingUntilGardenerResourceManagerReportsReadiness{{"Waiting until gardener-resource-manager reports readiness\n[CONDITIONAL]"}}:::conditional
-    DeployingKubernetesAPIServerWithNodeAgentAuthorizer{{"Deploying Kubernetes API server with node-agent-authorizer\n[CONDITIONAL]"}}:::conditional
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut{{"Waiting until Kubernetes API server with node-agent-authorizer rolled out\n[CONDITIONAL]"}}:::conditional
     DeployingGardenerShootAccessResources{{"Deploying Gardener shoot access resources\n[CONDITIONAL]"}}:::conditional
     InitializingConnectionToShoot{{"Initializing connection to Shoot\n[CONDITIONAL]"}}:::conditional
     DeployingKubernetesControllerManager{{"Deploying Kubernetes controller manager\n[CONDITIONAL]"}}:::conditional
@@ -160,11 +158,8 @@ flowchart TD
     WaitingUntilKubernetesAPIServerReportsReadiness --> SettingGardenerResourceManagerReplicasTo2
     SettingGardenerResourceManagerReplicasTo2 --> DeployingGardenerResourceManager
     DeployingGardenerResourceManager --> WaitingUntilGardenerResourceManagerReportsReadiness
-    WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingKubernetesAPIServerWithNodeAgentAuthorizer
-    DeployingKubernetesAPIServerWithNodeAgentAuthorizer --> WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut
     InitializingSecretsManagement --> DeployingGardenerShootAccessResources
     WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingGardenerShootAccessResources
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> DeployingGardenerShootAccessResources
     DeployingCloudProviderAccountSecret --> InitializingConnectionToShoot
     WaitingUntilKubernetesAPIServerReportsReadiness --> InitializingConnectionToShoot
     DeployingInternalDomainDNSRecord --> InitializingConnectionToShoot

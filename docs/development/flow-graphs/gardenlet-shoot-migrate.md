@@ -19,7 +19,6 @@ flowchart TD
     ScalingKubernetesAPIServerUpAndWaitingUntilReady{{"Scaling Kubernetes API Server up and waiting until ready\n[CONDITIONAL]"}}:::conditional
     DeployingGardenerResourceManager{{"Deploying gardener-resource-manager\n[CONDITIONAL]"}}:::conditional
     EnsuringThatTheGardenerResourceManagerIsScaledTo1{{"Ensuring that the gardener-resource-manager is scaled to 1\n[CONDITIONAL]"}}:::conditional
-    ScalingKubernetesAPIServerWithNodeAgentAuthorizerUpAndWaitingUntilReady{{"Scaling Kubernetes API Server with node-agent-authorizer up and waiting until ready\n[CONDITIONAL]"}}:::conditional
     ConfiguringManagedResourcesObjectsToBeKeptInTheShoot{{"Configuring Managed Resources objects to be kept in the Shoot\n[CONDITIONAL]"}}:::conditional
     DeletingAllManagedResourcesFromTheShootsNamespace["Deleting all Managed Resources from the Shoot's namespace"]
     WaitingUntilManagedResourcesAreDeleted["Waiting until ManagedResources are deleted"]
@@ -82,12 +81,9 @@ flowchart TD
     InitializingSecretsManagement --> ScalingKubernetesAPIServerUpAndWaitingUntilReady
     ScalingKubernetesAPIServerUpAndWaitingUntilReady --> DeployingGardenerResourceManager
     DeployingGardenerResourceManager --> EnsuringThatTheGardenerResourceManagerIsScaledTo1
-    EnsuringThatTheGardenerResourceManagerIsScaledTo1 --> ScalingKubernetesAPIServerWithNodeAgentAuthorizerUpAndWaitingUntilReady
     EnsuringThatTheGardenerResourceManagerIsScaledTo1 --> ConfiguringManagedResourcesObjectsToBeKeptInTheShoot
-    ScalingKubernetesAPIServerWithNodeAgentAuthorizerUpAndWaitingUntilReady --> ConfiguringManagedResourcesObjectsToBeKeptInTheShoot
     ConfiguringManagedResourcesObjectsToBeKeptInTheShoot --> DeletingAllManagedResourcesFromTheShootsNamespace
     EnsuringThatTheGardenerResourceManagerIsScaledTo1 --> DeletingAllManagedResourcesFromTheShootsNamespace
-    ScalingKubernetesAPIServerWithNodeAgentAuthorizerUpAndWaitingUntilReady --> DeletingAllManagedResourcesFromTheShootsNamespace
     DeletingAllManagedResourcesFromTheShootsNamespace --> WaitingUntilManagedResourcesAreDeleted
     WaitingUntilManagedResourcesAreDeleted --> DeletingMachineControllerManager
     DeletingMachineControllerManager --> WaitingUntilMachineControllerManagerHasBeenDeleted

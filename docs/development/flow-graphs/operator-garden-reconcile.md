@@ -22,6 +22,7 @@ flowchart TD
     WaitingForETCDDruidToBeReady["Waiting for ETCD Druid to be ready"]
     ReconcilingDNSRecordsForVirtualGardenClusterAndIngressController{{"Reconciling DNSRecords for virtual garden cluster and ingress controller\n[CONDITIONAL]"}}:::conditional
     ReconcilingMainETCDBackupBucket{{"Reconciling main ETCD backup bucket\n[CONDITIONAL]"}}:::conditional
+    ReconcilingMainETCDBackupEntry{{"Reconciling main ETCD backup entry\n[CONDITIONAL]"}}:::conditional
     DeployingMainAndEventsETCDsOfVirtualGarden["Deploying main and events ETCDs of virtual garden"]
     WaitingUntilMainAndEventETCDsReportReadiness["Waiting until main and event ETCDs report readiness"]
     DeployingExtensionResourcesBeforeKubeApiserver["Deploying extension resources before kube-apiserver"]
@@ -92,8 +93,9 @@ flowchart TD
     ReconcileIstioInternalLoadBalancingConfigMap --> SyncPointSystemComponents
     DeployingETCDDruid --> WaitingForETCDDruidToBeReady
     SyncPointSystemComponents --> ReconcilingDNSRecordsForVirtualGardenClusterAndIngressController
+    ReconcilingMainETCDBackupBucket --> ReconcilingMainETCDBackupEntry
     WaitingForETCDDruidToBeReady --> DeployingMainAndEventsETCDsOfVirtualGarden
-    ReconcilingMainETCDBackupBucket --> DeployingMainAndEventsETCDsOfVirtualGarden
+    ReconcilingMainETCDBackupEntry --> DeployingMainAndEventsETCDsOfVirtualGarden
     DeployingMainAndEventsETCDsOfVirtualGarden --> WaitingUntilMainAndEventETCDsReportReadiness
     DeployingExtensionResourcesBeforeKubeApiserver --> WaitingUntilExtensionResourcesHandledBeforeKubeApiserverAreReady
     SyncPointSystemComponents --> DeployingAndWaitingForKubeApiserverServiceInTheRuntimeCluster

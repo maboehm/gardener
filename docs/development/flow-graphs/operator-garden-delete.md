@@ -45,6 +45,7 @@ flowchart TD
     DestroyingExtensionResources["Destroying extension resources"]
     WaitingUntilExtensionResourcesHaveBeenDeleted["Waiting until extension resources have been deleted"]
     DestroyingDNSRecordsForVirtualGardenClusterAndIngressController{{"Destroying DNSRecords for virtual garden cluster and ingress controller\n[CONDITIONAL]"}}:::conditional
+    DestroyingMainETCDBackupEntry{{"Destroying main ETCD backup entry\n[CONDITIONAL]"}}:::conditional
     DestroyingMainETCDBackupBucket{{"Destroying main ETCD backup bucket\n[CONDITIONAL]"}}:::conditional
     DestroyingETCDDruid{{"Destroying ETCD Druid\n[CONDITIONAL]"}}:::conditional
     DestroyingIstio["Destroying Istio"]
@@ -100,6 +101,7 @@ flowchart TD
     WaitingUntilExtensionResourcesHaveBeenDeleted --> SyncPointCleanedUp
     ResettingRequiredVirtualConditionOnExtensionsSinceVirtualClusterHasBeenDestroyed --> SyncPointCleanedUp
     DestroyingDNSRecordsForVirtualGardenClusterAndIngressController --> SyncPointCleanedUp
+    DestroyingMainETCDBackupEntry --> SyncPointCleanedUp
     DestroyingMainETCDBackupBucket --> SyncPointCleanedUp
     DestroyingETCDDruid --> SyncPointCleanedUp
     DestroyingIstio --> SyncPointCleanedUp
@@ -143,7 +145,9 @@ flowchart TD
     DestroyingGardenerResourceManagerForVirtualGarden --> InvalidateClientForVirtualGarden
     DestroyingExtensionResources --> WaitingUntilExtensionResourcesHaveBeenDeleted
     SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingDNSRecordsForVirtualGardenClusterAndIngressController
+    SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingMainETCDBackupEntry
     SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingMainETCDBackupBucket
+    DestroyingMainETCDBackupEntry --> DestroyingMainETCDBackupBucket
     SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingETCDDruid
     SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingIstio
     SyncPointVirtualGardenControlPlaneDestroyed --> DestroyingKubernetesVerticalPodAutoscaler

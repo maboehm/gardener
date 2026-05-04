@@ -44,8 +44,6 @@ flowchart TD
     WaitingUntilMainAndEventsEtcdScaledUpAfterKubeApiserverIsReady{{"Waiting until main and events etcd scaled up after kube-apiserver is ready\n[CONDITIONAL]"}}:::conditional
     DeployingGardenerResourceManager["Deploying gardener-resource-manager"]
     WaitingUntilGardenerResourceManagerReportsReadiness{{"Waiting until gardener-resource-manager reports readiness\n[CONDITIONAL]"}}:::conditional
-    DeployingKubernetesAPIServerWithNodeAgentAuthorizer{{"Deploying Kubernetes API server with node-agent-authorizer\n[CONDITIONAL]"}}:::conditional
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut{{"Waiting until Kubernetes API server with node-agent-authorizer rolled out\n[CONDITIONAL]"}}:::conditional
     RenewingShootAccessSecretsAfterCreationOfNewServiceAccountSigningKey{{"Renewing shoot access secrets after creation of new ServiceAccount signing key\n[CONDITIONAL]"}}:::conditional
     DeployingShootControlPlaneComponents{{"Deploying shoot control plane components\n[CONDITIONAL]"}}:::conditional
     WaitingUntilShootControlPlaneHasBeenReconciled{{"Waiting until shoot control plane has been reconciled\n[CONDITIONAL]"}}:::conditional
@@ -201,11 +199,7 @@ flowchart TD
     ScalingMainAndEventsEtcdAfterKubeApiserverIsReady --> WaitingUntilMainAndEventsEtcdScaledUpAfterKubeApiserverIsReady
     WaitingUntilKubernetesAPIServerRolledOut --> DeployingGardenerResourceManager
     DeployingGardenerResourceManager --> WaitingUntilGardenerResourceManagerReportsReadiness
-    WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingKubernetesAPIServerWithNodeAgentAuthorizer
-    DeployingKubernetesAPIServerWithNodeAgentAuthorizer --> WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> RenewingShootAccessSecretsAfterCreationOfNewServiceAccountSigningKey
     WaitingUntilGardenerResourceManagerReportsReadiness --> RenewingShootAccessSecretsAfterCreationOfNewServiceAccountSigningKey
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> DeployingShootControlPlaneComponents
     WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingShootControlPlaneComponents
     DeployingShootControlPlaneComponents --> WaitingUntilShootControlPlaneHasBeenReconciled
     DeployingInitialShootLoggingStackInSeed --> DeployingShootLoggingStackInSeed
@@ -215,10 +209,9 @@ flowchart TD
     DeployingShootNamespacesSystemComponent --> WaitingUntilShootNamespacesHaveBeenReconciled
     InitializingSecretsManagement --> DeployingVpnSeedServer
     DeployingShootNamespaceInSeed --> DeployingVpnSeedServer
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> DeployingVpnSeedServer
+    WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingVpnSeedServer
     InitializingSecretsManagement --> DeployingGardenerShootAccessResources
     WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingGardenerShootAccessResources
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> InitializingConnectionToShoot
     DeployingInternalDomainDNSRecord --> InitializingConnectionToShoot
     DeployingGardenerShootAccessResources --> InitializingConnectionToShoot
     InitializingConnectionToShoot --> SyncPublicServiceAccountSigningKeysToGardenCluster
@@ -234,7 +227,7 @@ flowchart TD
     WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingDependencyWatchdogShootAccessResources
     InitializingSecretsManagement --> DeployingKubernetesControllerManager
     DeployingCloudProviderAccountSecret --> DeployingKubernetesControllerManager
-    WaitingUntilKubernetesAPIServerWithNodeAgentAuthorizerRolledOut --> DeployingKubernetesControllerManager
+    WaitingUntilGardenerResourceManagerReportsReadiness --> DeployingKubernetesControllerManager
     DeployingKubernetesControllerManager --> WaitingUntilKubeControllerManagerReportsReadiness
     InitializingConnectionToShoot --> CreatingNewServiceAccountSecretsAfterCreationOfNewSigningKey
     WaitingUntilKubeControllerManagerReportsReadiness --> CreatingNewServiceAccountSecretsAfterCreationOfNewSigningKey
