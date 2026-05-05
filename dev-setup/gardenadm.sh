@@ -37,7 +37,7 @@ if [[ "$SCENARIO" == "connect" ]]; then
   ./hack/usage/generate-kubeconfig.sh self-hosted-shoot --docker gind-machine-0 > "$garden_runtime_cluster_kubeconfig"
 elif [[ "$SCENARIO" == "connect-managed-infra" ]]; then
   garden_runtime_cluster_kubeconfig="$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER"
-  kubectl get secrets -n shoot--garden--root kubeconfig -o yaml | yq .data.kubeconfig | base64 -d > "$garden_runtime_cluster_kubeconfig"
+  ./hack/usage/generate-kubeconfig.sh self-hosted-shoot >"$garden_runtime_cluster_kubeconfig"
 fi
 
 case "$COMMAND" in

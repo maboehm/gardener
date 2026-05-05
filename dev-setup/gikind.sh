@@ -32,8 +32,6 @@ up() {
     make kind-up
   fi
 
-  controlplane_pod=""
-
   make gardenadm-up SCENARIO=managed-infra
 
   # Run `gardenadm bootstrap` and export the kubeconfig for the self-hosted shoot
@@ -43,17 +41,16 @@ up() {
     export IMAGEVECTOR_OVERWRITE_CHARTS="$generated_dir/.imagevector-overwrite-charts.yaml"
     KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER" "$(dirname "$0")/../bin/gardenadm" bootstrap -d "$generated_dir/managed-infra"
 
-    controlplane_pod="$(kubectl --kubeconfig="$KUBECONFIG_RUNTIME_CLUSTER" get po -n shoot--garden--root -l app=machine -o yaml | yq '.items[]|select(.metadata.name|contains("control")).metadata.labels.machine')"
-    tmp_exposure "$controlplane_pod"
+    tmp_exposure
     KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER" ./hack/usage/generate-kubeconfig.sh self-hosted-shoot >"$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER"
+    # yq -i 'del(.contexts[0].context.namespace)' "$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER" # TODO: this field seems to trip up skaffold
   fi
 
   # Deploy Gardener into the self-hosted shoot and run `gardenadm connect` to deploy gardenlet which registers the Shoot
   if ((level >= 4)); then
     make gardenadm-up SCENARIO=connect-managed-infra # deploys gardener-operator, the 'Garden' resource, and waits for reconciliation
     connect_command="$(KUBECONFIG=$KUBECONFIG_VIRTUAL_GARDEN_CLUSTER "$(dirname "$0")/../bin/gardenadm" token create --print-connect-command --shoot-namespace garden --shoot-name root)"
-    kubectl --kubeconfig="$KUBECONFIG_RUNTIME_CLUSTER" exec -it -n shoot--garden--root "$controlplane_pod" -- sh -c \
-      "export IMAGEVECTOR_OVERWRITE=/var/lib/gardenadm/.imagevector-overwrite.yaml; export IMAGEVECTOR_OVERWRITE_CHARTS=/var/lib/gardenadm/.imagevector-overwrite-charts.yaml; $connect_command"
+    exec_controlplane "export IMAGEVECTOR_OVERWRITE=/var/lib/gardenadm/imagevector-overwrite.yaml; export IMAGEVECTOR_OVERWRITE_CHARTS=/var/lib/gardenadm/imagevector-overwrite-charts.yaml; /opt/bin/$connect_command"
   fi
 
   # Register the self-hosted shoot as a seed via a ManagedSeed
@@ -66,9 +63,15 @@ down() {
   make kind-down
 }
 
+exec_controlplane() {
+  local cmd="$*"
+  local pod="$(kubectl --kubeconfig="$KUBECONFIG_RUNTIME_CLUSTER" get pod -n shoot--garden--root -o name | grep "control-plane" | cut -d/ -f2)"
+  kubectl --kubeconfig="$KUBECONFIG_RUNTIME_CLUSTER" exec -it -n shoot--garden--root "$pod" -- sh -c "$cmd"
+}
+
 # TODO(maboehm): Remove after SelfHostedShoot Exposure is working
 tmp_exposure() {
-  local machine="$1"
+  local machine="$(kubectl --kubeconfig="$KUBECONFIG_RUNTIME_CLUSTER" get po -n shoot--garden--root -l app=machine -o yaml | yq '.items[]|select(.metadata.name|contains("control-plane")).metadata.labels.machine')"
 
   export KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER"
   cat <<EOF | kubectl apply -o yaml -f -
@@ -89,8 +92,7 @@ EOF
   kubectl wait -n shoot--garden--root service/control-plane --for=jsonpath='{.status.loadBalancer.ingress}'
   ip="$(kubectl get svc -n shoot--garden--root control-plane -o yaml | yq '.status.loadBalancer.ingress[0].ip')"
   patch='{"spec":{"values":["'$ip'"]},"metadata":{"annotations":{"gardener.cloud/operation":"reconcile"}}}'
-  kubectl exec -it -n shoot--garden--root "$(kubectl get pod -n shoot--garden--root -l machine="$machine" -o name | cut -d/ -f2)" -- \
-    sh -c "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch dnsrecord -n kube-system root-external -o yaml --type=merge -p '$patch'"
+  exec_controlplane "KUBECONFIG=/etc/kubernetes/admin.conf kubectl patch dnsrecord -n kube-system root-external -o yaml --type=merge -p '$patch'"
 }
 
 case "$COMMAND" in
