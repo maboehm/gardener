@@ -9,13 +9,12 @@ set -o pipefail
 COMMAND="${1:-up}"
 VALID_COMMANDS=("up" "down")
 
-SCENARIO="${SCENARIO:-default}"
+SCENARIO="${SCENARIO:-bootstrap}"
 declare -A SCENARIO_LEVEL=(
   [setup]=1     # Only starts the kind cluster and renders the manifests.
   [bootstrap]=2 # Like 'setup', but also runs `gardenadm bootstrap` and exports the kubeconfig for the self-hosted shoot
-  [join]=3      # Like 'default', but also runs `gardenadm join` on gind-machine-1 to join it as worker node
-  [connect]=4   # Like 'join', but also deploys Gardener into the self-hosted shoot and runs `gardenadm connect` to deploy gardenlet which registers the Shoot
-  [full]=5      # Like 'connect', but also registers the self-hosted shoot as a seed via a ManagedSeed
+  [connect]=3   # Like 'join', but also deploys Gardener into the self-hosted shoot and runs `gardenadm connect` to deploy gardenlet which registers the Shoot
+  [full]=4      # Like 'connect', but also registers the self-hosted shoot as a seed via a ManagedSeed
 )
 
 if [[ -z "${SCENARIO_LEVEL[$SCENARIO]+x}" ]]; then
@@ -24,8 +23,6 @@ if [[ -z "${SCENARIO_LEVEL[$SCENARIO]+x}" ]]; then
 fi
 
 level="${SCENARIO_LEVEL[$SCENARIO]}"
-
-generated_dir="$(dirname "$0")/../dev-setup/gardenadm/resources/generated"
 
 up() {
   if ! kind get clusters | grep gardener-local &>/dev/null; then
@@ -36,30 +33,41 @@ up() {
 
   # Run `gardenadm bootstrap` and export the kubeconfig for the self-hosted shoot
   if ((level >= 2)); then
+    local generated_dir="$(dirname "$0")/../dev-setup/gardenadm/resources/generated"
     make gardenadm # builds gardenadm binary locally
     export IMAGEVECTOR_OVERWRITE="$generated_dir/.imagevector-overwrite.yaml"
     export IMAGEVECTOR_OVERWRITE_CHARTS="$generated_dir/.imagevector-overwrite-charts.yaml"
-    KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER" "$(dirname "$0")/../bin/gardenadm" bootstrap -d "$generated_dir/managed-infra"
+
+    # if we can connect to the self-hosted shoot cluster, we assume that the bootstrap has already been done and skip
+    # it. This allows re-running the script without re-bootstrapping, which takes a long time.
+    if ! kubectl --kubeconfig="$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER" cluster-info &>/dev/null || ((level == 2)); then
+      KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER" "$(dirname "$0")/../bin/gardenadm" bootstrap -d "$generated_dir/managed-infra"
+    fi
 
     tmp_exposure
     KUBECONFIG="$KUBECONFIG_RUNTIME_CLUSTER" ./hack/usage/generate-kubeconfig.sh self-hosted-shoot >"$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER"
-    # yq -i 'del(.contexts[0].context.namespace)' "$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER" # TODO: this field seems to trip up skaffold
   fi
 
   # Deploy Gardener into the self-hosted shoot and run `gardenadm connect` to deploy gardenlet which registers the Shoot
-  if ((level >= 4)); then
+  if ((level >= 3)); then
     make gardenadm-up SCENARIO=connect-managed-infra # deploys gardener-operator, the 'Garden' resource, and waits for reconciliation
     connect_command="$(KUBECONFIG=$KUBECONFIG_VIRTUAL_GARDEN_CLUSTER "$(dirname "$0")/../bin/gardenadm" token create --print-connect-command --shoot-namespace garden --shoot-name root)"
     exec_controlplane "export IMAGEVECTOR_OVERWRITE=/var/lib/gardenadm/imagevector-overwrite.yaml; export IMAGEVECTOR_OVERWRITE_CHARTS=/var/lib/gardenadm/imagevector-overwrite-charts.yaml; /opt/bin/$connect_command"
   fi
 
   # Register the self-hosted shoot as a seed via a ManagedSeed
-  if ((level >= 5)); then
+  if ((level >= 4)); then
     make seed-up KUBECONFIG="$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER"
   fi
 }
 
 down() {
+  if kubectl --kubeconfig "$KUBECONFIG_VIRTUAL_GARDEN_CLUSTER" -n garden get managedseed root &>/dev/null; then
+    make seed-down KUBECONFIG="$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER"
+  fi
+
+  make gardenadm-down SCENARIO=connect-managed-infra
+
   make kind-down
 }
 
