@@ -7,6 +7,7 @@ package care
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,10 +27,12 @@ import (
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	timewindow "github.com/gardener/gardener/pkg/apis/utils/timewindow"
 	"github.com/gardener/gardener/pkg/component/gardener/resourcemanager"
 	"github.com/gardener/gardener/pkg/gardenlet/operation/botanist/matchers"
 	"github.com/gardener/gardener/pkg/gardenlet/operation/shoot"
 	"github.com/gardener/gardener/pkg/utils"
+	hibernationutils "github.com/gardener/gardener/pkg/utils/hibernation"
 	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
 	secretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager"
 )
@@ -57,6 +60,15 @@ func shootHibernatedConstraints(clock clock.Clock, conditions ...gardencorev1bet
 		// Only preserve it if it's non-True (i.e. there are ignored MRs worth showing).
 		// When True, drop it — consistent with filterOptionalConstraints behaviour.
 		if cond.Type == gardencorev1beta1.ShootHasIgnoredManagedResources {
+			if cond.Status != gardencorev1beta1.ConditionTrue {
+				hibernationConditions = append(hibernationConditions, cond)
+			}
+			continue
+		}
+		// Optional constraint computed before the hibernation guard.
+		// Only preserve it if it's non-True (i.e. the configuration is problematic).
+		// When True, drop it — consistent with filterOptionalConstraints behaviour.
+		if cond.Type == gardencorev1beta1.ShootHibernationScheduleProblematic {
 			if cond.Status != gardencorev1beta1.ConditionTrue {
 				hibernationConditions = append(hibernationConditions, cond)
 			}
@@ -128,6 +140,9 @@ func (c *Constraint) constraintsChecks(
 		constraints.hasIgnoredManagedResources = v1beta1helper.UpdatedConditionWithClock(c.clock, constraints.hasIgnoredManagedResources, status, reason, message)
 	}
 
+	status, reason, message = c.checkIfHibernationScheduleProblematic()
+	constraints.hibernationScheduleProblematic = v1beta1helper.UpdatedConditionWithClock(c.clock, constraints.hibernationScheduleProblematic, status, reason, message)
+
 	if c.shoot.HibernationEnabled || c.shoot.GetInfo().Status.IsHibernated {
 		return shootHibernatedConstraints(c.clock, constraints.ConvertToSlice()...)
 	}
@@ -154,14 +169,14 @@ func (c *Constraint) constraintsChecks(
 
 		return filterOptionalConstraints(
 			[]gardencorev1beta1.Condition{constraints.hibernationPossible, constraints.maintenancePreconditionsSatisfied},
-			[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.manualInPlaceWorkersUpdated, constraints.hasIgnoredManagedResources},
+			[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.manualInPlaceWorkersUpdated, constraints.hibernationScheduleProblematic, constraints.hasIgnoredManagedResources},
 		)
 	}
 	if !apiServerRunning {
 		// don't check constraints if API server has already been deleted or has not been created yet
 		return filterOptionalConstraints(
 			shootControlPlaneNotRunningConstraints(c.clock, constraints.hibernationPossible, constraints.maintenancePreconditionsSatisfied),
-			[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.manualInPlaceWorkersUpdated, constraints.hasIgnoredManagedResources},
+			[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.manualInPlaceWorkersUpdated, constraints.hibernationScheduleProblematic, constraints.hasIgnoredManagedResources},
 		)
 	}
 	c.shootClient = shootClient.Client()
@@ -184,7 +199,7 @@ func (c *Constraint) constraintsChecks(
 
 	return filterOptionalConstraints(
 		[]gardencorev1beta1.Condition{constraints.hibernationPossible, constraints.maintenancePreconditionsSatisfied},
-		[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.crdsWithProblematicConversionWebhooks, constraints.manualInPlaceWorkersUpdated, constraints.hasIgnoredManagedResources},
+		[]gardencorev1beta1.Condition{constraints.caCertificateValiditiesAcceptable, constraints.crdsWithProblematicConversionWebhooks, constraints.manualInPlaceWorkersUpdated, constraints.hibernationScheduleProblematic, constraints.hasIgnoredManagedResources},
 	)
 }
 
@@ -482,6 +497,130 @@ func wasRemediatedByGardener(annotations map[string]string) bool {
 	return annotations[v1beta1constants.GardenerWarning] != ""
 }
 
+func (c *Constraint) checkIfHibernationScheduleProblematic() (gardencorev1beta1.ConditionStatus, string, string) {
+	shoot := c.shoot.GetInfo()
+
+	if shoot.Spec.Hibernation == nil || len(shoot.Spec.Hibernation.Schedules) == 0 {
+		return gardencorev1beta1.ConditionTrue,
+			"NoProblematicHibernationSchedule",
+			"Shoot does not have a hibernation schedule."
+	}
+
+	if v1beta1helper.GetEncryptionProviderType(shoot.Spec.Kubernetes.KubeAPIServer) != gardencorev1beta1.EncryptionProviderTypeAESGCM {
+		return gardencorev1beta1.ConditionTrue,
+			"NoProblematicHibernationSchedule",
+			"Shoot does not use AESGCM encryption for etcd."
+	}
+
+	if IsMaintenanceWindowInHibernationWindow(shoot) {
+		return gardencorev1beta1.ConditionFalse,
+			"MaintenanceWindowInHibernationWindow",
+			"The shoot uses AESGCM encryption for etcd and its maintenance window is entirely within the " +
+				"hibernation window. The ETCD encryption key auto-rotation will never be triggered automatically. " +
+				"Please adjust the maintenance window or the hibernation schedule so that maintenance can run " +
+				"while the cluster is awake."
+	}
+
+	return gardencorev1beta1.ConditionTrue,
+		"NoProblematicHibernationSchedule",
+		"The maintenance window is not entirely within the hibernation window."
+}
+
+// IsMaintenanceWindowInHibernationWindow returns true when the maintenance window is never fully covered by an awake
+// interval.
+//
+// Because the hibernation schedules are defined by cron schedules, we determine this by running a 14 day simulation of
+// all wake-up and hibernation events and checking if any awake interval fully covers the maintenance window.
+func IsMaintenanceWindowInHibernationWindow(shoot *gardencorev1beta1.Shoot) bool {
+	if shoot.Spec.Maintenance == nil || shoot.Spec.Maintenance.TimeWindow == nil {
+		return false
+	}
+	if shoot.Spec.Hibernation == nil || len(shoot.Spec.Hibernation.Schedules) == 0 {
+		return false
+	}
+
+	maintWindow, err := timewindow.ParseMaintenanceTimeWindow(
+		shoot.Spec.Maintenance.TimeWindow.Begin,
+		shoot.Spec.Maintenance.TimeWindow.End,
+	)
+	if err != nil {
+		return false
+	}
+
+	schedules, err := hibernationutils.Parse(shoot.Spec.Hibernation.Schedules)
+	if err != nil || len(schedules) == 0 {
+		return false
+	}
+
+	// If there are no wake-up events at all we assume it's never awake during maintenance and return true
+	if hasWakeEvent := slices.ContainsFunc(schedules, func(s hibernationutils.ParsedSchedule) bool {
+		return s.Operation == hibernationutils.WakeUp
+	}); !hasWakeEvent {
+		return true
+	}
+
+	const maxCronIter = 10_000
+	iter := 0
+
+	// Fixed reference window - two full weeks cover every weekday/weekend pattern at least once.
+	simStart := time.Date(2006, time.January, 2, 0, 0, 0, 0, time.UTC) // monday
+	simEnd := simStart.Add(14 * 24 * time.Hour)
+
+	// Collect all events inside [simStart, simEnd) and sort by time.
+	type event struct {
+		at        time.Time
+		operation hibernationutils.Operation
+	}
+	// make sure there is a hibernate event at the start and end of the simulation window, so that the first and last
+	// intervals are closed
+	events := []event{
+		{at: simStart, operation: hibernationutils.Hibernate},
+		{at: simEnd, operation: hibernationutils.Hibernate},
+	}
+	for _, s := range schedules {
+		for t := s.Next(simStart); t.Before(simEnd); t = s.Next(t) {
+			iter++
+			if iter > maxCronIter {
+				return true // conservatively assume the schedule is not problematic if we hit the iteration cap
+			}
+			events = append(events, event{at: t, operation: s.Operation})
+		}
+	}
+	slices.SortFunc(events, func(a, b event) int { return a.at.Compare(b.at) })
+
+	// Deduplicate consecutive events with the same operation: only state transitions matter
+	deduped := events[:1]
+	for _, ev := range events[1:] {
+		if ev.operation != deduped[len(deduped)-1].operation {
+			deduped = append(deduped, ev)
+		}
+	}
+	events = deduped
+
+	maintDuration := maintWindow.Duration()
+	for i := range len(events) - 1 {
+		if events[i].operation != hibernationutils.WakeUp {
+			continue
+		}
+		// during this interval the cluster is awake
+		intervalStart := events[i].at
+		intervalEnd := events[i+1].at
+
+		// Find the first maintenance window start on or after intervalStart.
+		maintStart := maintWindow.AdjustedBegin(intervalStart)
+		if maintStart.Before(intervalStart) {
+			maintStart = maintStart.Add(24 * time.Hour)
+		}
+		// If the maintenance window ends before the end of the awake interval, then the maintenance window fits
+		// entirely inside an awake interval and is not problematic
+		if maintStart.Add(maintDuration).Before(intervalEnd) {
+			return false
+		}
+	}
+
+	return true
+}
+
 func filterOptionalConstraints(required, optional []gardencorev1beta1.Condition) []gardencorev1beta1.Condition {
 	var out []gardencorev1beta1.Condition
 	out = append(out, required...)
@@ -502,6 +641,7 @@ type ShootConstraints struct {
 	caCertificateValiditiesAcceptable     gardencorev1beta1.Condition
 	crdsWithProblematicConversionWebhooks gardencorev1beta1.Condition
 	manualInPlaceWorkersUpdated           gardencorev1beta1.Condition
+	hibernationScheduleProblematic        gardencorev1beta1.Condition
 	hasIgnoredManagedResources            gardencorev1beta1.Condition
 }
 
@@ -513,6 +653,7 @@ func (g ShootConstraints) ConvertToSlice() []gardencorev1beta1.Condition {
 		g.caCertificateValiditiesAcceptable,
 		g.crdsWithProblematicConversionWebhooks,
 		g.manualInPlaceWorkersUpdated,
+		g.hibernationScheduleProblematic,
 		g.hasIgnoredManagedResources,
 	}
 }
@@ -525,6 +666,7 @@ func (g ShootConstraints) ConstraintTypes() []gardencorev1beta1.ConditionType {
 		g.caCertificateValiditiesAcceptable.Type,
 		g.crdsWithProblematicConversionWebhooks.Type,
 		g.manualInPlaceWorkersUpdated.Type,
+		g.hibernationScheduleProblematic.Type,
 		g.hasIgnoredManagedResources.Type,
 	}
 }
@@ -538,6 +680,7 @@ func NewShootConstraints(clock clock.Clock, shoot *gardencorev1beta1.Shoot) Shoo
 		caCertificateValiditiesAcceptable:     v1beta1helper.GetOrInitConditionWithClock(clock, shoot.Status.Constraints, gardencorev1beta1.ShootCACertificateValiditiesAcceptable),
 		crdsWithProblematicConversionWebhooks: v1beta1helper.GetOrInitConditionWithClock(clock, shoot.Status.Constraints, gardencorev1beta1.ShootCRDsWithProblematicConversionWebhooks),
 		manualInPlaceWorkersUpdated:           v1beta1helper.GetOrInitConditionWithClock(clock, shoot.Status.Constraints, gardencorev1beta1.ShootManualInPlaceWorkersUpdated),
+		hibernationScheduleProblematic:        v1beta1helper.GetOrInitConditionWithClock(clock, shoot.Status.Constraints, gardencorev1beta1.ShootHibernationScheduleProblematic),
 		hasIgnoredManagedResources:            v1beta1helper.GetOrInitConditionWithClock(clock, shoot.Status.Constraints, gardencorev1beta1.ShootHasIgnoredManagedResources),
 	}
 }
