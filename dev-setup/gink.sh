@@ -48,6 +48,8 @@ case "$COMMAND" in
     cp "$KUBECONFIG_SELFHOSTEDSHOOT_CLUSTER" "$(dirname "$0")/gardenconfig/components/credentials/secret-project-local/kubeconfig/kubeconfig"
 
     kubectl --kubeconfig "$KUBECONFIG_RUNTIME_CLUSTER" scale deployment gardener-resource-manager -n shoot--garden--root --replicas=0
+    kubectl --kubeconfig "$KUBECONFIG_RUNTIME_CLUSTER" delete mutatingwebhookconfiguration gardener-resource-manager
+    kubectl --kubeconfig "$KUBECONFIG_RUNTIME_CLUSTER" delete validatingwebhookconfiguration gardener-resource-manager
 
     # Deploy Gardener into the self-hosted shoot and run `gardenadm connect` to deploy gardenlet which registers the Shoot
     if (( level >= 2 )); then
