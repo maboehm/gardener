@@ -45,6 +45,10 @@ spec:
           maxPods: 250
   kubernetes:
     version: 1.35.4
+    verticalPodAutoscaler:
+      # The VPA will be deployed by gardener-operator and this field is ignored.
+      # Setting this explicitly makes sure the spec matches the reality.
+      enabled: false
     kubelet:
       seccompDefault: true
       serializeImagePulls: false

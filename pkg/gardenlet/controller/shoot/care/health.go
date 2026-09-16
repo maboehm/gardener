@@ -116,7 +116,8 @@ func NewHealth(
 			seedClientSet.Client(),
 			clock,
 			healthchecker.WithConditionThresholds(conditionThresholds),
-			healthchecker.WithLastOperation(shoot.GetInfo().Status.LastOperation)),
+			healthchecker.WithLastOperation(shoot.GetInfo().Status.LastOperation),
+		),
 	}
 }
 
@@ -440,7 +441,7 @@ func (h *Health) checkControlPlane(
 		return exitCondition, err
 	}
 
-	if !h.shoot.IsWorkerless && v1beta1helper.SeedSettingDependencyWatchdogProberEnabled(h.seed.GetInfo().Spec.Settings) {
+	if !h.shoot.IsSelfHosted() && !h.shoot.IsWorkerless && v1beta1helper.SeedSettingDependencyWatchdogProberEnabled(h.seed.GetInfo().Spec.Settings) {
 		if scaledDownDeploymentNames, err := CheckIfDependencyWatchdogProberScaledDownControllers(ctx, h.seedClient.Client(), h.shoot.ControlPlaneNamespace); err != nil {
 			return new(v1beta1helper.FailedCondition(h.clock, h.shoot.GetInfo().Status.LastOperation, h.conditionThresholds, condition, "ControllersScaledDownCheckError", err.Error())), nil
 		} else if len(scaledDownDeploymentNames) > 0 {
@@ -530,6 +531,11 @@ func (h *Health) checkObservabilityComponents(
 	*gardencorev1beta1.Condition,
 	error,
 ) {
+	// TODO(rfranzke,rickardsjp): Enable these components once the observability components are ready for self-hosted shoots.
+	if h.shoot.IsSelfHosted() {
+		c := v1beta1helper.UpdatedConditionWithClock(h.clock, condition, gardencorev1beta1.ConditionTrue, "ObservabilityComponentsNotDeployed", "Observability components are not deployed for self-hosted shoots.")
+		return &c, nil
+	}
 	if exitCondition := h.healthChecker.CheckExtensionCondition(condition, extensionConditions, healthCheckOutdatedThreshold); exitCondition != nil {
 		return exitCondition, nil
 	}
