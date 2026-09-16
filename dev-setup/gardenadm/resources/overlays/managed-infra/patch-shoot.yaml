@@ -15,3 +15,10 @@ spec:
     nodes: 10.0.0.0/16
     pods: 10.3.0.0/16
     services: 10.4.0.0/16
+    providerConfig:
+      # Typha is optional and currently needs to be disabled until we have fixed zone pinning for self-hosted-shoots.
+      # TODO(maboehm): re-enable after this is fixed.
+      apiVersion: calico.networking.extensions.gardener.cloud/v1alpha1
+      kind: NetworkConfig
+      typha:
+        enabled: false
