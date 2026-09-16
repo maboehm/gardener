@@ -171,7 +171,8 @@ EOF
     generate_client_cert_kubeconfig "self-hosted-shoot--${shoot_namespace}--${shoot_name}" \
       "$(get_self_hosted_shoot_certs "${shoot_namespace}" "${shoot_name}" "${docker_container}")"
   else
-    kubectl --kubeconfig "${runtime_kubeconfig}" -n "shoot--${shoot_namespace}--${shoot_name}" get secret kubeconfig -o jsonpath='{.data.kubeconfig}' | base64 -d
+    generate_client_cert_kubeconfig "self-hosted-shoot--${shoot_namespace}--${shoot_name}" \
+      "$(get_self_hosted_shoot_certs "${shoot_namespace}" "${shoot_name}" "" "${runtime_kubeconfig}")"
   fi
 }
 
@@ -204,7 +205,13 @@ get_virtual_garden_certs() {
 get_self_hosted_shoot_certs() {
   local shoot_namespace="$1"
   local shoot_name="$2"
-  local docker_container="$3"
+  local docker_container="${3:-}"
+
+  local runtime_kubeconfig="${4:-}"
+  local control_plane_pod
+  if [[ -n "$runtime_kubeconfig" ]]; then
+    control_plane_pod=$(kubectl --kubeconfig "$runtime_kubeconfig" get pod -n "infra-shoot--${shoot_namespace}--${shoot_name}" -o name | grep control-plane | cut -d/ -f2 | head -1)
+  fi
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -214,12 +221,16 @@ get_self_hosted_shoot_certs() {
   local client_ca_key="${tmp_dir}/client-ca.key"
 
   remote_kubectl() {
-    docker exec "${docker_container}" kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"
+    if [[ -n "$docker_container" ]]; then
+      docker exec "${docker_container}" kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"
+    else
+      kubectl --kubeconfig "$runtime_kubeconfig" exec -n "infra-shoot--${shoot_namespace}--${shoot_name}" "${control_plane_pod}" -- kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"
+    fi
   }
 
-  remote_kubectl -n kube-system get secret -l name=ca        -o jsonpath='{..data.ca\.crt}' | base64 -d > "$cluster_ca_cert"
-  remote_kubectl -n kube-system get secret -l name=ca-client -o jsonpath='{..data.ca\.crt}' | base64 -d > "$client_ca_cert"
-  remote_kubectl -n kube-system get secret -l name=ca-client -o jsonpath='{..data.ca\.key}' | base64 -d > "$client_ca_key"
+  remote_kubectl -n kube-system get secret -l name=ca -o jsonpath='{..data.ca\.crt}' | base64 -d >"$cluster_ca_cert"
+  remote_kubectl -n kube-system get secret -l name=ca-client -o jsonpath='{..data.ca\.crt}' | base64 -d >"$client_ca_cert"
+  remote_kubectl -n kube-system get secret -l name=ca-client -o jsonpath='{..data.ca\.key}' | base64 -d >"$client_ca_key"
 
   echo "${tmp_dir}:${shoot_name}.${shoot_namespace}.external.local.gardener.cloud"
 }
