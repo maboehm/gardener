@@ -325,20 +325,20 @@ var _ = Describe("ResourceManager", func() {
 				{Key: "c"},
 				{Key: "node-role.kubernetes.io/control-plane", Operator: corev1.TolerationOpExists},
 			},
-			ResponsibilityMode:                        ForShootOrVirtualGarden,
-			TargetDisableCache:                        &targetDisableCache,
-			WatchedNamespace:                          &watchedNamespace,
-			SchedulingProfile:                         &binPackingSchedulingProfile,
-			DefaultSeccompProfileEnabled:              false,
-			PodTopologySpreadConstraintsEnabled:       true,
-			VPAInPlaceUpdatesEnabled:                  true,
-			LogLevel:                                  "info",
-			LogFormat:                                 "json",
-			Zones:                                     []string{"a", "b"},
-			ManagedResourceLabels:                     map[string]string{"foo": "bar"},
-			NodeAgentAuthorizerEnabled:                true,
+			ResponsibilityMode:                  ForShootOrVirtualGarden,
+			TargetDisableCache:                  &targetDisableCache,
+			WatchedNamespace:                    &watchedNamespace,
+			SchedulingProfile:                   &binPackingSchedulingProfile,
+			DefaultSeccompProfileEnabled:        false,
+			PodTopologySpreadConstraintsEnabled: true,
+			VPAInPlaceUpdatesEnabled:            true,
+			LogLevel:                            "info",
+			LogFormat:                           "json",
+			Zones:                               []string{"a", "b"},
+			ManagedResourceLabels:               map[string]string{"foo": "bar"},
+			NodeAgentAuthorizerEnabled:          true,
 			NodeAgentAuthorizerAuthorizeWithSelectors: new(true),
-			MachineNamespace:                          new(watchedNamespace),
+			MachineNamespace: new(watchedNamespace),
 			PodKubeAPIServerLoadBalancingWebhook: PodKubeAPIServerLoadBalancingWebhook{
 				Enabled: false,
 				Configs: []PodKubeAPIServerLoadBalancingWebhookConfig{
@@ -2094,10 +2094,25 @@ subjects:
 			},
 		}
 		utilruntime.Must(references.InjectAnnotations(managedResource))
-
 	})
 
 	Describe("#Deploy", func() {
+		Context("self-hosted shoot ", func() {
+			It("should add the from-world-to-ports annotation to the service (so the in-cluster host-network kube-apiserver can reach the webhook)", func() {
+				cfg.ResponsibilityMode = ForShootOrVirtualGarden
+				resourceManager = New(fakeClient, metav1.NamespaceSystem, sm, cfg)
+				resourceManager.SetSecrets(secrets)
+
+				Expect(resourceManager.Deploy(ctx)).To(Succeed())
+
+				actualService := &corev1.Service{}
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Namespace: metav1.NamespaceSystem, Name: "gardener-resource-manager"}, actualService)).To(Succeed())
+				Expect(actualService.Annotations).To(HaveKeyWithValue("networking.resources.gardener.cloud/from-world-to-ports", `[{"protocol":"TCP","port":10250}]`))
+				// The webhook-target annotation must still be present alongside the from-world annotation.
+				Expect(actualService.Annotations).To(HaveKeyWithValue("networking.resources.gardener.cloud/from-all-webhook-targets-allowed-ports", `[{"protocol":"TCP","port":10250}]`))
+			})
+		})
+
 		Context("target cluster != source cluster; watched namespace is set", func() {
 			JustBeforeEach(func() {
 				role.Namespace = watchedNamespace

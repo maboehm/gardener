@@ -776,6 +776,10 @@ func (r *resourceManager) ensureService(ctx context.Context) error {
 				Port:     new(intstr.FromInt32(r.serverPort())),
 				Protocol: new(corev1.ProtocolTCP),
 			}))
+			// The kube-apiserver of self-hosted shoots runs in host-network, so we need to allow traffic from the world to the server port.
+			if r.responsibleForSelfHostedShoot() {
+				metav1.SetMetaDataAnnotation(&service.ObjectMeta, resourcesv1alpha1.NetworkingFromWorldToPorts, fmt.Sprintf(`[{"protocol":"TCP","port":%d}]`, r.serverPort()))
+			}
 		}
 
 		// TODO: Consider enabling TAR even for seed/garden runtime/self-hosted shoots.
@@ -2218,4 +2222,8 @@ func (r *resourceManager) defaultPortOrBootstrapControlPlaneNodePort(defaultPort
 
 func (r *resourceManager) responsibleForHostedShootOrVirtualGarden() bool {
 	return r.values.ResponsibilityMode == ForShootOrVirtualGarden && r.namespace != metav1.NamespaceSystem
+}
+
+func (r *resourceManager) responsibleForSelfHostedShoot() bool {
+	return r.values.ResponsibilityMode == ForShootOrVirtualGarden && r.namespace == metav1.NamespaceSystem
 }
