@@ -35,6 +35,14 @@ spec:
         enabled: false
       persistentVolumeClaimAutoscaler:
         enabled: true
+      monitoring:
+        enabled: false
+      logging:
+        enabled: false
+        victoriaLogs:
+          enabled: false
+        vali:
+          enabled: false
   virtualCluster:
     dns:
       domains:

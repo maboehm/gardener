@@ -682,6 +682,14 @@ func vpaEnabled(settings *operatorv1alpha1.Settings) bool {
 	return false
 }
 
+// isSeedMonitoringEnabled returns true if the seed monitoring stack is enabled. Default is enabled.
+func isSeedMonitoringEnabled(settings *operatorv1alpha1.Settings) bool {
+	if settings != nil && settings.Monitoring != nil {
+		return ptr.Deref(settings.Monitoring.Enabled, true)
+	}
+	return true
+}
+
 func pvcAutoscalerEnabled(settings *operatorv1alpha1.Settings) bool {
 	return settings != nil &&
 		settings.PersistentVolumeClaimAutoscaler != nil &&
