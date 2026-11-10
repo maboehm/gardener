@@ -179,6 +179,9 @@ func (r *Reconciler) reconcile(
 	var (
 		backupConfigured        = helper.GetETCDMainBackup(garden) != nil
 		monitoringEnabled       = isSeedMonitoringEnabled(garden.Spec.RuntimeCluster.Settings)
+		loggingEnabled          = isLoggingEnabled(garden.Spec.RuntimeCluster.Settings)
+		valiLoggingEnabled      = isValiEnabled(garden.Spec.RuntimeCluster.Settings)
+		victoriaLogsEnabled     = isVictoriaLogsEnabled(garden.Spec.RuntimeCluster.Settings)
 		virtualClusterClientSet kubernetes.Interface
 		virtualClusterClient    client.Client
 		defaultEncryptedGVKs    = append(gardenerutils.DefaultGardenerGVKsForEncryption(), gardenerutils.DefaultGVKsForEncryption()...)
@@ -712,23 +715,47 @@ func (r *Reconciler) reconcile(
 			Dependencies: flow.NewTaskIDs(initializeVirtualClusterClient, waitUntilGardenerAPIServerReady, snapshotETCD),
 		})
 
-		_ = g.Add(flow.Task{
-			Name: "Deploying fluent-operator",
-			Fn:   c.fluentOperator.Deploy,
-		})
-		_ = g.Add(flow.Task{
-			Name: "Deploying fluent-operator CustomResources",
-			Fn:   c.fluentOperatorCustomResources.Deploy,
-		})
-		_ = g.Add(flow.Task{
-			Name: "Deploying fluent-bit",
-			Fn:   c.fluentBit.Deploy,
-		})
+		_ = g.AddGroup(func() flow.TaskGroup {
+			group := flow.NewTaskGroup("Deploying logging",
+				flow.Task{Name: "Deploying fluent-operator", Fn: c.fluentOperator.Deploy},
+				flow.Task{Name: "Deploying fluent-operator CustomResources", Fn: c.fluentOperatorCustomResources.Deploy},
+				flow.Task{Name: "Deploying fluent-bit", Fn: c.fluentBit.Deploy},
+			)
+
+			deployOpenTelemetryOperator := group.Add(flow.Task{Name: "Deploying OpenTelemetry Operator", Fn: c.openTelemetryOperator.Deploy})
+			group.Add(flow.Task{
+				Name:         "Deploying OpenTelemetry Collector",
+				Fn:           c.openTelemetryCollector.Deploy,
+				Dependencies: flow.NewTaskIDs(deployOpenTelemetryOperator),
+			})
+
+			return group.SkipIf(!loggingEnabled)
+		}())
+		_ = g.AddGroup(func() flow.TaskGroup {
+			// The custom resources must be destroyed before their operators are removed.
+			group := flow.NewTaskGroup("Destroying logging")
+
+			destroyFluentOperatorCustomResources := group.Add(flow.Task{Name: "Destroying fluent-operator CustomResources", Fn: component.OpDestroyAndWait(c.fluentOperatorCustomResources).Destroy})
+			destroyFluentBit := group.Add(flow.Task{Name: "Destroying fluent-bit", Fn: component.OpDestroyAndWait(c.fluentBit).Destroy})
+			group.Add(flow.Task{
+				Name:         "Destroying fluent-operator",
+				Fn:           component.OpDestroyAndWait(c.fluentOperator).Destroy,
+				Dependencies: flow.NewTaskIDs(destroyFluentOperatorCustomResources, destroyFluentBit),
+			})
+
+			destroyOpenTelemetryCollector := group.Add(flow.Task{Name: "Destroying OpenTelemetry Collector", Fn: component.OpDestroyAndWait(c.openTelemetryCollector).Destroy})
+			group.Add(flow.Task{
+				Name:         "Destroying OpenTelemetry Operator",
+				Fn:           component.OpDestroyAndWait(c.openTelemetryOperator).Destroy,
+				Dependencies: flow.NewTaskIDs(destroyOpenTelemetryCollector),
+			})
+
+			return group.SkipIf(loggingEnabled)
+		}())
 		_ = g.Add(flow.Task{
 			Name: "Deploying VictoriaLogs",
 			Fn: func(ctx context.Context) error {
-				logging := garden.Spec.RuntimeCluster.Settings.Logging
-				if logging != nil && logging.VictoriaLogs != nil && logging.VictoriaLogs.Enabled != nil && !*logging.VictoriaLogs.Enabled {
+				if !victoriaLogsEnabled {
 					return c.victoriaLogs.Destroy(ctx)
 				}
 				return c.victoriaLogs.Deploy(ctx)
@@ -741,8 +768,7 @@ func (r *Reconciler) reconcile(
 		_ = g.Add(flow.Task{
 			Name: "Deploying Vali",
 			Fn: func(ctx context.Context) error {
-				logging := garden.Spec.RuntimeCluster.Settings.Logging
-				if logging != nil && logging.Vali != nil && logging.Vali.Enabled != nil && !*logging.Vali.Enabled {
+				if !valiLoggingEnabled {
 					return c.vali.Destroy(ctx)
 				}
 				return c.vali.Deploy(ctx)
@@ -755,10 +781,6 @@ func (r *Reconciler) reconcile(
 		_ = g.Add(flow.Task{
 			Name: "Deploying prometheus-operator",
 			Fn:   c.prometheusOperator.Deploy,
-		})
-		deployOpenTelemetryOperator = g.Add(flow.Task{
-			Name: "Deploying OpenTelemetry Operator",
-			Fn:   c.openTelemetryOperator.Deploy,
 		})
 		deploySeedMonitoring = g.AddGroup(func() flow.TaskGroup {
 			group := flow.NewTaskGroup("Deploying monitoring")
@@ -849,12 +871,6 @@ func (r *Reconciler) reconcile(
 				flow.Task{Name: "Destroying Perses", Fn: component.OpDestroyAndWait(c.perses).Destroy},
 			).SkipIf(monitoringEnabled),
 		)
-		_ = g.Add(flow.Task{
-			Name:         "Deploying OpenTelemetry Collector",
-			Fn:           c.openTelemetryCollector.Deploy,
-			Dependencies: flow.NewTaskIDs(deployOpenTelemetryOperator),
-		})
-
 		_ = g.Add(flow.Task{
 			Name:         "Deploying Kube State Metrics",
 			Fn:           c.kubeStateMetrics.Deploy,

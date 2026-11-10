@@ -3064,7 +3064,7 @@ boolean
 </td>
 <td>
 <em>(Optional)</em>
-<p>Enabled is used to enable or disable logging stack for clusters.</p>
+<p>Enabled is used to enable or disable logging stack for clusters.<br />Defaults to true.</p>
 </td>
 </tr>
 <tr>

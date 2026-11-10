@@ -210,6 +210,7 @@ type Monitoring struct {
 // Logging contains configuration for the logging stack.
 type Logging struct {
 	// Enabled is used to enable or disable logging stack for clusters.
+	// Defaults to true.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 	// Vali contains configuration for the Vali

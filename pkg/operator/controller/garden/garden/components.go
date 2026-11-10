@@ -345,7 +345,7 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.fluentOperatorCustomResources, err = r.newFluentCustomResources()
+	c.fluentOperatorCustomResources, err = r.newFluentCustomResources(garden.Spec.RuntimeCluster.Settings)
 	if err != nil {
 		return
 	}
@@ -1452,16 +1452,18 @@ func (r *Reconciler) newFluentBit() (component.DeployWaiter, error) {
 	)
 }
 
-func (r *Reconciler) newFluentCustomResources() (component.DeployWaiter, error) {
+func (r *Reconciler) newFluentCustomResources(settings *operatorv1alpha1.Settings) (component.DeployWaiter, error) {
 	customResourcesLabels := map[string]string{v1beta1constants.LabelKeyCustomLoggingResource: v1beta1constants.LabelValueCustomLoggingResource}
 
-	// The gardener-operator has no option to disable logging, so the default output is always included.
-	outputs := []*fluentbitv1alpha2.ClusterOutput{fluentcustomresources.GetDefaultClusterOutput(customResourcesLabels)}
+	var outputs []*fluentbitv1alpha2.ClusterOutput
+	if isValiEnabled(settings) || features.DefaultFeatureGate.Enabled(features.OpenTelemetryCollector) {
+		outputs = append(outputs, fluentcustomresources.GetDefaultClusterOutput(customResourcesLabels))
 
-	if features.DefaultFeatureGate.Enabled(features.OpenTelemetryCollector) {
-		outputs = append(outputs, fluentcustomresources.GetDynamicClusterOutput(customResourcesLabels))
-	} else {
-		outputs = append(outputs, fluentcustomresources.GetStaticClusterOutput(customResourcesLabels))
+		if features.DefaultFeatureGate.Enabled(features.OpenTelemetryCollector) {
+			outputs = append(outputs, fluentcustomresources.GetDynamicClusterOutput(customResourcesLabels))
+		} else {
+			outputs = append(outputs, fluentcustomresources.GetStaticClusterOutput(customResourcesLabels))
+		}
 	}
 
 	return sharedcomponent.NewFluentOperatorCustomResources(
@@ -1774,7 +1776,7 @@ func (r *Reconciler) newPerses(garden *operatorv1alpha1.Garden, secretsManager s
 			// configuring a pod priority class on the Perses resource (see github.com/perses/perses-operator/pull/456).
 			IsGardenCluster:     true,
 			VPAEnabled:          vpaEnabled(garden.Spec.RuntimeCluster.Settings),
-			VictoriaLogsEnabled: features.DefaultFeatureGate.Enabled(features.VictoriaLogsBackend),
+			VictoriaLogsEnabled: isVictoriaLogsEnabled(garden.Spec.RuntimeCluster.Settings),
 			// The garden runtime cluster runs istio, so include its dashboards.
 			IncludeIstioDashboards: true,
 			ExternalExposure: &perses.ExposureValues{
