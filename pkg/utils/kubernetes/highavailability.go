@@ -13,7 +13,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	// resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 )
 
 // GetReplicaCount returns the replica count based on the criteria, failure tolerance type, and component type.
@@ -23,12 +23,11 @@ func GetReplicaCount(failureToleranceType *gardencorev1beta1.FailureToleranceTyp
 	}
 
 	if failureToleranceType != nil &&
-		*failureToleranceType == "" &&
-		componentType == resourcesv1alpha1.HighAvailabilityConfigTypeController {
+		*failureToleranceType == "" {
 		return new(int32(1))
 	}
 
-	return new(int32(2))
+	return new(int32(1))
 }
 
 // GetNodeSelectorRequirementForZones returns a node selector requirement to ensure all pods are scheduled only on

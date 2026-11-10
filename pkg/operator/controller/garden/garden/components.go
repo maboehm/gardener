@@ -794,7 +794,7 @@ func (r *Reconciler) newKubeAPIServer(
 }
 
 func gardenerAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) gardenerapiserver.AutoscalingConfig {
-	replicas := int32(2)
+	replicas := int32(1)
 	if helper.HighAvailabilityEnabled(garden) {
 		replicas = 3
 	}
@@ -811,7 +811,7 @@ func gardenerAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) gardene
 }
 
 func kubeAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) kubeapiserver.AutoscalingConfig {
-	minReplicas := int32(2)
+	minReplicas := int32(1)
 	if helper.HighAvailabilityEnabled(garden) {
 		minReplicas = 3
 	}
