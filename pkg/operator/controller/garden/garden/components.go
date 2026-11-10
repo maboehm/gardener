@@ -267,9 +267,13 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.etcdEvents, err = r.newEtcd(log, garden, secretsManager, v1beta1constants.ETCDRoleEvents, etcd.ClassNormal)
-	if err != nil {
-		return
+	if !ptr.Deref(garden.Spec.VirtualCluster.ETCD.Events.Disabled, false) {
+		c.etcdEvents, err = r.newEtcd(log, garden, secretsManager, v1beta1constants.ETCDRoleEvents, etcd.ClassNormal)
+		if err != nil {
+			return
+		}
+	} else {
+		c.etcdEvents = etcd.NewNoOp()
 	}
 	c.kubeAPIServerService, err = r.newKubeAPIServerService(log, garden, c.istio.GetValues().IngressGateway)
 	if err != nil {

@@ -330,8 +330,9 @@ spec:
                           stack.
                         properties:
                           enabled:
-                            description: Enabled is used to enable or disable logging
-                              stack for clusters.
+                            description: |-
+                              Enabled is used to enable or disable logging stack for clusters.
+                              Defaults to true.
                             type: boolean
                           vali:
                             description: Vali contains configuration for the Vali
@@ -508,6 +509,10 @@ spec:
                             required:
                             - minAllowed
                             type: object
+                          disabled:
+                            description: Disabled indicates whether the events etcd
+                              is disabled.
+                            type: boolean
                           storage:
                             description: Storage contains storage configuration.
                             properties:

@@ -57,8 +57,7 @@ spec:
         storage:
           capacity: 25Gi
       events:
-        storage:
-          capacity: 10Gi
+        disabled: true
     kubernetes:
       version: 1.36.2
     gardener:
