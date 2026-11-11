@@ -150,11 +150,14 @@ func (h *health) checkRuntimeComponents(condition gardencorev1beta1.Condition, m
 }
 
 func (h *health) checkVirtualComponents(ctx context.Context, condition gardencorev1beta1.Condition, managedResources []resourcesv1alpha1.ManagedResource) (*gardencorev1beta1.Condition, error) {
+	etcds := sets.New(operatorv1alpha1.VirtualGardenETCDMain)
+	if h.garden.Spec.VirtualCluster.ETCD != nil && h.garden.Spec.VirtualCluster.ETCD.Events != nil && h.garden.Spec.VirtualCluster.ETCD.Events.Disabled != nil && !*h.garden.Spec.VirtualCluster.ETCD.Events.Disabled {
+		etcds.Insert(operatorv1alpha1.VirtualGardenETCDEvents)
+	}
 	if exitCondition, err := h.healthChecker.CheckControlPlane(
 		ctx,
 		h.gardenNamespace,
-		sets.New(operatorv1alpha1.DeploymentNameVirtualGardenGardenerResourceManager, operatorv1alpha1.DeploymentNameVirtualGardenKubeAPIServer, operatorv1alpha1.DeploymentNameVirtualGardenKubeControllerManager),
-		sets.New(operatorv1alpha1.VirtualGardenETCDMain, operatorv1alpha1.VirtualGardenETCDEvents),
+		sets.New(operatorv1alpha1.DeploymentNameVirtualGardenGardenerResourceManager, operatorv1alpha1.DeploymentNameVirtualGardenKubeAPIServer, operatorv1alpha1.DeploymentNameVirtualGardenKubeControllerManager), etcds,
 		condition,
 	); err != nil || exitCondition != nil {
 		return exitCondition, err
