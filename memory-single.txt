@@ -1,0 +1,16 @@
+# 2026-11-11T11:50:57Z label=single
+# in-scope components only (no -local, node-agent, gardenadm); values in kB
+389002   gardener-operator                  Rss=339072   Pss=264311   Pss_Anon=240116   Pss_File=24195   
+390163   gardener-resource-manager          Rss=123732   Pss=53405    Pss_Anon=44028    Pss_File=9377    
+391265   gardener-resource-manager          Rss=195640   Pss=122186   Pss_Anon=111396   Pss_File=10790   
+391948   gardener-gardenlet                 Rss=305196   Pss=305192   Pss_Anon=205656   Pss_File=99536   
+393318   gardener-resource-manager          Rss=138364   Pss=66616    Pss_Anon=56740    Pss_File=9876    
+394299   gardener-apiserver                 Rss=254616   Pss=180848   Pss_Anon=160212   Pss_File=20636   
+395483   gardener-controller-manager        Rss=139692   Pss=66904    Pss_Anon=55956    Pss_File=10948   
+395586   gardener-scheduler                 Rss=109592   Pss=41501    Pss_Anon=32496    Pss_File=9005    
+395637   gardener-admission-controller      Rss=124688   Pss=53917    Pss_Anon=44032    Pss_File=9885    
+398930   gardener-resource-manager          Rss=174280   Pss=101451   Pss_Anon=91120    Pss_File=10331   
+
+processes=10
+SUM Rss=1904872 kB  Pss=1256331 kB  Pss_Anon=1041752 kB  Pss_File=214579 kB
+VM meminfo: MemTotal=41049456 kB MemFree=15619872 kB Cached=14224796 kB MemAvailable=30547660 kB used(excl. cache)=10008704 kB
