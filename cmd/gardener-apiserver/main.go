@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	_ "k8s.io/component-base/logs/json/register" // for JSON log format registration
@@ -21,6 +22,7 @@ func main() {
 
 	ctx := signals.SetupSignalHandler()
 	if err := app.NewCommand().ExecuteContext(ctx); err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 }

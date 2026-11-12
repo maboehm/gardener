@@ -5,6 +5,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 	runtimemetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -21,6 +24,7 @@ func main() {
 	flow.RegisterMetrics(runtimemetrics.Registry)
 
 	if err := app.NewCommand().ExecuteContext(signals.SetupSignalHandler()); err != nil {
-		panic(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
