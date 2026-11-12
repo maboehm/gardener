@@ -16,9 +16,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/component-base/version/verflag"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -92,8 +94,13 @@ func run(ctx context.Context, cancel context.CancelFunc, log logr.Logger, cfg *o
 
 	log.Info("Setting up manager")
 	mgr, err := manager.New(restConfig, manager.Options{
-		Logger:                  log,
-		Scheme:                  operatorclient.RuntimeScheme,
+		Logger: log,
+		Scheme: operatorclient.RuntimeScheme,
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{&apiextensionsv1.CustomResourceDefinition{}},
+			},
+		},
 		GracefulShutdownTimeout: new(5 * time.Second),
 
 		HealthProbeBindAddress: net.JoinHostPort(cfg.Server.HealthProbes.BindAddress, strconv.Itoa(int(cfg.Server.HealthProbes.Port))),
