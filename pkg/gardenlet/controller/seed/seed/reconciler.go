@@ -40,6 +40,7 @@ import (
 type Reconciler struct {
 	GardenClient                         client.Client
 	SeedClientSet                        kubernetes.Interface
+	CRDClient                            client.WithWatch
 	SeedVersion                          *semver.Version
 	Config                               gardenletconfigv1alpha1.GardenletConfiguration
 	Clock                                clock.Clock

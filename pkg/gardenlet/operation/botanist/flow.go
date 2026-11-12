@@ -8,9 +8,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1beta1helper "github.com/gardener/gardener/pkg/api/core/v1beta1/helper"
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -79,30 +81,35 @@ const TaskGroupReconcileCustomResourceDefinitions flow.TaskID = "TaskGroupReconc
 // ReconcileCustomResourceDefinitionsTaskGroup returns the flow.TaskGroup for reconciling the CRDs used by Gardener.
 // Each CRD is deployed in an individual task, and it is waited until the CRDs are marked as ready/available.
 func (b *Botanist) ReconcileCustomResourceDefinitionsTaskGroup() flow.TaskGroup {
-	deployers := map[string]func() (component.DeployWaiter, error){
-		"VPA": func() (component.DeployWaiter, error) {
-			return vpa.NewCRD(b.SeedClientSet.Client(), nil)
+	// newCRDClient is created lazily, because this task group is only relevant for self-hosted shoots.
+	newCRDClient := sync.OnceValues(func() (client.Client, error) {
+		return kubernetesutils.NewUncachedWatchClient(b.SeedClientSet.RESTConfig(), b.SeedClientSet.Client())
+	})
+
+	deployers := map[string]func(crdClient client.Client) (component.DeployWaiter, error){
+		"VPA": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return vpa.NewCRD(crdClient, nil)
 		},
-		"Prometheus": func() (component.DeployWaiter, error) {
-			return prometheusoperator.NewCRDs(b.SeedClientSet.Client())
+		"Prometheus": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return prometheusoperator.NewCRDs(crdClient)
 		},
-		"Fluent": func() (component.DeployWaiter, error) {
-			return fluentoperator.NewCRDs(b.SeedClientSet.Client())
+		"Fluent": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return fluentoperator.NewCRDs(crdClient)
 		},
-		"Extension": func() (component.DeployWaiter, error) {
-			return extensioncrds.NewCRD(b.SeedClientSet.Client(), true, true)
+		"Extension": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return extensioncrds.NewCRD(crdClient, true, true)
 		},
-		"ETCD": func() (component.DeployWaiter, error) {
-			return etcd.NewCRD(b.SeedClientSet.Client(), b.Shoot.KubernetesVersion)
+		"ETCD": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return etcd.NewCRD(crdClient, b.Shoot.KubernetesVersion)
 		},
-		"Istio": func() (component.DeployWaiter, error) {
-			return istio.NewCRD(b.SeedClientSet.Client())
+		"Istio": func(crdClient client.Client) (component.DeployWaiter, error) {
+			return istio.NewCRD(crdClient)
 		},
 	}
 
 	if b.Shoot.HasManagedInfrastructure() {
-		deployers["Machine"] = func() (component.DeployWaiter, error) {
-			return machinecontrollermanager.NewCRD(b.SeedClientSet.Client())
+		deployers["Machine"] = func(crdClient client.Client) (component.DeployWaiter, error) {
+			return machinecontrollermanager.NewCRD(crdClient)
 		}
 	}
 
@@ -112,7 +119,12 @@ func (b *Botanist) ReconcileCustomResourceDefinitionsTaskGroup() flow.TaskGroup 
 		tasks = append(tasks, flow.Task{
 			Name: fmt.Sprintf("Deploying %s CRDs", description),
 			Fn: func(ctx context.Context) error {
-				d, err := newDeployer()
+				crdClient, err := newCRDClient()
+				if err != nil {
+					return fmt.Errorf("failed creating client for CRDs: %w", err)
+				}
+
+				d, err := newDeployer(crdClient)
 				if err != nil {
 					return fmt.Errorf("failed creating %s deployer: %w", description, err)
 				}

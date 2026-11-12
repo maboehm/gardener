@@ -33,6 +33,13 @@ func (r *Reconciler) AddToManager(mgr manager.Manager, gardenCluster cluster.Clu
 	if r.GardenClient == nil {
 		r.GardenClient = gardenCluster.GetClient()
 	}
+	if r.CRDClient == nil {
+		var err error
+		r.CRDClient, err = kubernetesutils.NewUncachedWatchClient(mgr.GetConfig(), mgr.GetClient())
+		if err != nil {
+			return fmt.Errorf("failed creating client for CRDs: %w", err)
+		}
+	}
 	if r.SeedVersion == nil {
 		var err error
 		r.SeedVersion, err = semver.NewVersion(r.SeedClientSet.Version())

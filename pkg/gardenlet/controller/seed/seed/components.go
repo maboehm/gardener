@@ -152,47 +152,53 @@ func (r *Reconciler) instantiateComponents(
 	err error,
 ) {
 	// crds
-	c.machineCRD, err = machinecontrollermanager.NewCRD(r.SeedClientSet.Client())
+	// CRDs are huge, so they are read without cache. If available, use the client that is able to watch them.
+	var seedCRDClient client.Client = r.SeedClientSet.Client()
+	if r.CRDClient != nil {
+		seedCRDClient = r.CRDClient
+	}
+
+	c.machineCRD, err = machinecontrollermanager.NewCRD(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.extensionCRD, err = extensioncrds.NewCRD(r.SeedClientSet.Client(), !seedIsGarden, true)
+	c.extensionCRD, err = extensioncrds.NewCRD(seedCRDClient, !seedIsGarden, true)
 	if err != nil {
 		return
 	}
-	c.etcdCRD, err = etcd.NewCRD(r.SeedClientSet.Client(), r.SeedVersion)
+	c.etcdCRD, err = etcd.NewCRD(seedCRDClient, r.SeedVersion)
 	if err != nil {
 		return
 	}
-	c.istioCRD, err = istio.NewCRD(r.SeedClientSet.Client())
+	c.istioCRD, err = istio.NewCRD(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.vpaCRD, err = vpa.NewCRD(r.SeedClientSet.Client(), nil)
+	c.vpaCRD, err = vpa.NewCRD(seedCRDClient, nil)
 	if err != nil {
 		return
 	}
-	c.fluentCRD, err = fluentoperator.NewCRDs(r.SeedClientSet.Client())
+	c.fluentCRD, err = fluentoperator.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.prometheusCRD, err = prometheusoperator.NewCRDs(r.SeedClientSet.Client())
+	c.prometheusCRD, err = prometheusoperator.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.openTelemetryCRD, err = oteloperator.NewCRDs(r.SeedClientSet.Client())
+	c.openTelemetryCRD, err = oteloperator.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.persesCRD, err = persesoperator.NewCRDs(r.SeedClientSet.Client())
+	c.persesCRD, err = persesoperator.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.victoriaCRD, err = victoriaoperator.NewCRDs(r.SeedClientSet.Client())
+	c.victoriaCRD, err = victoriaoperator.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
-	c.pvcAutoscalerCRD, err = pvcautoscaler.NewCRDs(r.SeedClientSet.Client())
+	c.pvcAutoscalerCRD, err = pvcautoscaler.NewCRDs(seedCRDClient)
 	if err != nil {
 		return
 	}
