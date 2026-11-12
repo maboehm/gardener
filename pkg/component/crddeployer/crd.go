@@ -30,6 +30,8 @@ type crdDeployer struct {
 }
 
 // New returns a new instance of DeployWaiter for CRDs.
+// If the given client implements client.WithWatch (and talks directly to the API server), Wait watches the CRDs instead
+// of polling them.
 func New(client client.Client, manifests []string, deletionProtection bool) (component.DeployWaiter, error) {
 	// Split manifests into individual object manifests, in case multiple CRDs are provided in a single string.
 	var splitManifests []string
@@ -115,8 +117,11 @@ func (c *crdDeployer) Destroy(ctx context.Context) error {
 	return flow.Parallel(fns...)(ctx)
 }
 
-// Wait waits for the CRDs to be deployed.
+// Wait waits for the CRDs to be deployed. If the client implements client.WithWatch the CRDs are watched instead of polled.
 func (c *crdDeployer) Wait(ctx context.Context) error {
+	if watchClient, ok := c.client.(client.WithWatch); ok {
+		return kubernetesutils.WaitUntilCRDManifestsReadyWithWatch(ctx, watchClient, slices.Collect(maps.Keys(c.crdNameToCRD))...)
+	}
 	return kubernetesutils.WaitUntilCRDManifestsReady(ctx, c.client, slices.Collect(maps.Keys(c.crdNameToCRD))...)
 }
 

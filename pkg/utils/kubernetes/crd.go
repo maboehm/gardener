@@ -6,16 +6,23 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/rest"
+	watchtools "k8s.io/client-go/tools/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/gardener/gardener/pkg/utils/flow"
@@ -62,6 +69,94 @@ func WaitUntilCRDManifestsReady(ctx context.Context, c client.Client, crdNames .
 		})
 	}
 	return flow.Parallel(fns...)(ctx)
+}
+
+// NewUncachedWatchClient returns a client that talks directly to the API server (no cache) and is able to watch. It
+// reuses the scheme and REST mapper of the given client. It is meant to be passed to the CRD deployers, so that they
+// do not need an informer for CustomResourceDefinitions and can watch them instead of polling.
+func NewUncachedWatchClient(restConfig *rest.Config, c client.Client) (client.WithWatch, error) {
+	return client.NewWithWatch(restConfig, client.Options{Scheme: c.Scheme(), Mapper: c.RESTMapper()})
+}
+
+// WaitUntilCRDManifestsReadyWithWatch behaves like WaitUntilCRDManifestsReady but does not poll. Instead, it opens a
+// watch for each CRD (restricted to its name via a field selector) and returns once the CRD is ready. The given client
+// must talk directly to the API server (i.e., it must not be backed by an informer cache).
+func WaitUntilCRDManifestsReadyWithWatch(ctx context.Context, c client.WithWatch, crdNames ...string) error {
+	var fns []flow.TaskFn
+	for _, crdName := range crdNames {
+		fns = append(fns, func(ctx context.Context) error {
+			timeoutCtx, cancel := context.WithTimeout(ctx, WaitTimeout)
+			defer cancel()
+
+			return waitUntilCRDReadyWithWatch(timeoutCtx, c, crdName)
+		})
+	}
+	return flow.Parallel(fns...)(ctx)
+}
+
+func waitUntilCRDReadyWithWatch(ctx context.Context, c client.WithWatch, crdName string) error {
+	var lastErr error
+
+	selector := client.MatchingFieldsSelector{Selector: fields.OneTermEqualSelector("metadata.name", crdName)}
+
+	for {
+		// List first (a single object thanks to the field selector) to get the current state and the resourceVersion to
+		// start the watch from.
+		crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+		if err := c.List(ctx, crdList, selector); err != nil {
+			return fmt.Errorf("failed listing CRD %q: %w", crdName, err)
+		}
+
+		lastErr = apierrors.NewNotFound(apiextensionsv1.Resource("customresourcedefinitions"), crdName)
+		if len(crdList.Items) > 0 {
+			// short-circuit if the CRD is already ready
+			if lastErr = health.CheckCustomResourceDefinition(&crdList.Items[0]); lastErr == nil {
+				return nil
+			}
+		}
+
+		w, err := c.Watch(ctx, &apiextensionsv1.CustomResourceDefinitionList{}, selector, &client.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: crdList.ResourceVersion}})
+		if err != nil {
+			return fmt.Errorf("failed watching CRD %q: %w", crdName, err)
+		}
+
+		_, err = watchtools.UntilWithoutRetry(ctx, w, func(event watch.Event) (bool, error) {
+			switch event.Type {
+			case watch.Added, watch.Modified:
+				crd, ok := event.Object.(*apiextensionsv1.CustomResourceDefinition)
+				if !ok {
+					return false, fmt.Errorf("unexpected object type %T", event.Object)
+				}
+				lastErr = health.CheckCustomResourceDefinition(crd)
+				return lastErr == nil, nil
+			case watch.Deleted:
+				lastErr = apierrors.NewNotFound(apiextensionsv1.Resource("customresourcedefinitions"), crdName)
+				return false, nil
+			case watch.Error:
+				return false, apierrors.FromObject(event.Object)
+			}
+			return false, nil
+		})
+		w.Stop()
+
+		switch {
+		case err == nil:
+			return nil
+		case errors.Is(err, watchtools.ErrWatchClosed):
+			// The server closed the watch (e.g., due to a timeout), start a new one unless the context is done.
+			if ctx.Err() != nil {
+				return timeoutError(ctx, lastErr)
+			}
+		case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled), wait.Interrupted(err):
+			return timeoutError(ctx, lastErr)
+		default:
+			return err
+		}
+	}
+}
+
+func timeoutError(ctx context.Context, lastErr error) error {
+	return fmt.Errorf("watch failed with %w, last error: %w", ctx.Err(), lastErr)
 }
 
 // WaitUntilCRDManifestsDestroyed takes CRD names and waits for them to be gone with a timeout, specified by `WaitTimeout`.

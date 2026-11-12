@@ -78,6 +78,52 @@ var _ = Describe("CRD", func() {
 			})
 		})
 
+		Describe("#WaitUntilCRDManifestsReadyWithWatch", func() {
+			var watchClient client.WithWatch
+
+			BeforeEach(func() {
+				testClientBuilder = testClientBuilder.WithIndex(&apiextensionsv1.CustomResourceDefinition{}, "metadata.name", func(obj client.Object) []string {
+					return []string{obj.GetName()}
+				})
+			})
+
+			It("should return because the CRD is ready", func() {
+				watchClient = testClientBuilder.WithObjects(readyCRD).Build()
+
+				Expect(WaitUntilCRDManifestsReadyWithWatch(ctx, watchClient, readyCRD.Name)).To(Succeed())
+			})
+
+			It("should return once the CRD becomes ready", func() {
+				DeferCleanup(test.WithVar(&WaitTimeout, 5*time.Second))
+				watchClient = testClientBuilder.WithObjects(unreadyCRD.DeepCopy()).Build()
+
+				go func() {
+					defer GinkgoRecover()
+					time.Sleep(100 * time.Millisecond)
+					crd := &apiextensionsv1.CustomResourceDefinition{}
+					Expect(watchClient.Get(ctx, client.ObjectKeyFromObject(unreadyCRD), crd)).To(Succeed())
+					crd.Status = readyCRD.Status
+					Expect(watchClient.Status().Update(ctx, crd)).To(Succeed())
+				}()
+
+				Expect(WaitUntilCRDManifestsReadyWithWatch(ctx, watchClient, unreadyCRD.Name)).To(Succeed())
+			})
+
+			It("should time out because CRD is not ready", func() {
+				watchClient = testClientBuilder.WithObjects(unreadyCRD).Build()
+
+				Expect(WaitUntilCRDManifestsReadyWithWatch(ctx, watchClient, unreadyCRD.Name)).
+					To(MatchError(And(ContainSubstring("context deadline exceeded"), ContainSubstring("condition \"NamesAccepted\" is missing"))))
+			})
+
+			It("should time out because CRD is not present", func() {
+				watchClient = testClientBuilder.Build()
+
+				Expect(WaitUntilCRDManifestsReadyWithWatch(ctx, watchClient, "myresources.mygroup.example.com")).
+					To(MatchError(ContainSubstring("context deadline exceeded")))
+			})
+		})
+
 		Describe("#WaitUntilManifestsDestroyed", func() {
 			It("should return because the CRD is gone", func() {
 				testClient = testClientBuilder.WithObjects(readyCRD).Build()

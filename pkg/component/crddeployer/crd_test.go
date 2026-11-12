@@ -99,7 +99,9 @@ status:
     - type: Established
       status: "True"`
 
-		fakeClient = fakeclient.NewClientBuilder().WithScheme(kubernetesscheme.Scheme).Build()
+		fakeClient = fakeclient.NewClientBuilder().WithScheme(kubernetesscheme.Scheme).
+			WithIndex(&apiextensionsv1.CustomResourceDefinition{}, "metadata.name", func(obj client.Object) []string { return []string{obj.GetName()} }).
+			Build()
 		crdDeployer, err = New(fakeClient, []string{crd1, crd2}, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(crdDeployer).ToNot(BeNil())
@@ -235,7 +237,7 @@ spec:
 			// This works, because the applied manifests `crd1` and `crd2` don't have their status field set.
 			// The testEnvironment API server does not set them, so this `Wait()` fails.
 			Expect(crdDeployer.Wait(ctx)).
-				To(MatchError(ContainSubstring("retry failed with context deadline exceeded, last error: condition \"NamesAccepted\" is missing")))
+				To(MatchError(ContainSubstring("watch failed with context deadline exceeded, last error: condition \"NamesAccepted\" is missing")))
 		})
 	})
 
