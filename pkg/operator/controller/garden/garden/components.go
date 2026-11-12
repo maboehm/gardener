@@ -182,43 +182,49 @@ func (r *Reconciler) instantiateComponents(
 	}
 
 	// crds
-	c.etcdCRD, err = etcd.NewCRD(r.RuntimeClientSet.Client(), r.RuntimeVersion)
+	// CRDs are huge, so they are read without cache. If available, use the client that is able to watch them.
+	var crdClient client.Client = r.RuntimeClientSet.Client()
+	if r.CRDClient != nil {
+		crdClient = r.CRDClient
+	}
+
+	c.etcdCRD, err = etcd.NewCRD(crdClient, r.RuntimeVersion)
 	if err != nil {
 		return
 	}
-	c.vpaCRD, err = vpa.NewCRD(r.RuntimeClientSet.Client(), nil)
+	c.vpaCRD, err = vpa.NewCRD(crdClient, nil)
 	if err != nil {
 		return
 	}
-	c.istioCRD, err = istio.NewCRD(r.RuntimeClientSet.Client())
+	c.istioCRD, err = istio.NewCRD(crdClient)
 	if err != nil {
 		return
 	}
-	c.fluentCRD, err = fluentoperator.NewCRDs(r.RuntimeClientSet.Client())
+	c.fluentCRD, err = fluentoperator.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}
-	c.prometheusCRD, err = prometheusoperator.NewCRDs(r.RuntimeClientSet.Client())
+	c.prometheusCRD, err = prometheusoperator.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}
-	c.openTelemetryCRD, err = oteloperator.NewCRDs(r.RuntimeClientSet.Client())
+	c.openTelemetryCRD, err = oteloperator.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}
-	c.extensionCRD, err = extensioncrds.NewCRD(r.RuntimeClientSet.Client(), true, false)
+	c.extensionCRD, err = extensioncrds.NewCRD(crdClient, true, false)
 	if err != nil {
 		return
 	}
-	c.persesCRD, err = persesoperator.NewCRDs(r.RuntimeClientSet.Client())
+	c.persesCRD, err = persesoperator.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}
-	c.victoriaCRD, err = victoriaoperator.NewCRDs(r.RuntimeClientSet.Client())
+	c.victoriaCRD, err = victoriaoperator.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}
-	c.pvcAutoscalerCRD, err = pvcautoscaler.NewCRDs(r.RuntimeClientSet.Client())
+	c.pvcAutoscalerCRD, err = pvcautoscaler.NewCRDs(crdClient)
 	if err != nil {
 		return
 	}

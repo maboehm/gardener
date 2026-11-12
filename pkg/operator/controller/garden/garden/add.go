@@ -54,6 +54,12 @@ func (r *Reconciler) AddToManager(mgr manager.Manager, gardenClientMap clientmap
 			return fmt.Errorf("failed creating runtime clientset: %w", err)
 		}
 	}
+	if r.CRDClient == nil {
+		r.CRDClient, err = client.NewWithWatch(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme(), Mapper: mgr.GetRESTMapper()})
+		if err != nil {
+			return fmt.Errorf("failed creating client for CRDs: %w", err)
+		}
+	}
 	if r.RuntimeVersion == nil {
 		serverVersion, err := r.RuntimeClientSet.DiscoverVersion()
 		if err != nil {

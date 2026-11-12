@@ -59,6 +59,7 @@ const (
 type Reconciler struct {
 	Manager               manager.Manager
 	RuntimeClientSet      kubernetes.Interface
+	CRDClient             client.WithWatch
 	RuntimeVersion        *semver.Version
 	Config                operatorconfigv1alpha1.OperatorConfiguration
 	Clock                 clock.Clock
