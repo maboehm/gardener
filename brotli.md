@@ -23,7 +23,7 @@ gardenlet.
 tests compare compressed bytes.
 
 `pkg/component/nodemanagement/dependencywatchdog/access_test.go`: hardcoded secret name/annotation hashes updated
-(`3cb55785` -> `f41d1a86`, `e3a35806` -> `ae60d80f`) because they are derived from the compressed data.
+(now `a55185c6` for the secret name suffix and `07af3d05` for the `reference.resources.gardener.cloud/secret-*` annotation with `LGWin: 20`) because they are derived from the compressed data.
 
 ## Measurements
 
@@ -134,3 +134,171 @@ sweep above, pool-only is a reasonable, lower-risk first PR, with the window cha
 
 Everything else in the working tree (`cmd/dummy`, CRD changes, `findings.md`, `dev-setup/skaffold-operator.yaml`, etc.) is
 unrelated to this optimization and must not be included.
+
+## Follow-up: serialization format (YAML -> JSON)
+
+After the brotli change, the next large source of allocation churn is the serialization of the objects in
+`Registry.Add`. This section collects the analysis; nothing from it is part of the brotli PR.
+
+### Current behavior
+
+- Every production caller of `managedresources.NewRegistry` passes a **YAML** serializer: one of the seven shared
+  package-level variables `kubernetes.{Seed,Shoot,Garden}Serializer` (`pkg/client/kubernetes/types.go`) and
+  `operatorclient.{Runtime,Virtual}Serializer` (`pkg/operator/client/scheme.go`), all built with
+  `SerializerOptions{Yaml: true, Pretty: false, Strict: false}`. The registry tests use `Yaml: true` as well.
+- `NewRegistry` reads `serializer.Identifier()` (a JSON string describing the serializer options), unmarshals it and
+  sets `isYAMLSerializer` when `yaml == "true"`. This flag is used in a single place, `Registry.Add`.
+- When the flag is set, `Add` normalizes the output of the serializer: it parses the YAML with `yaml.v4` into a generic
+  value and dumps it again (`yaml.WithV3Defaults()`, line width -1, indent 2, compact sequence indent). The code comment
+  says this is a workaround for inconsistent/unstable map key ordering of yaml.v2 (go-yaml PR 736) in the apimachinery
+  YAML serializer, to get stable bytes (and therefore stable hash-derived secret names). This is one extra full parse and
+  emit per object, which is the YAML parser/emitter allocation seen in the operator profile (~150 MB alloc_space, plus
+  ~105 MB `json.Marshal`, of 1450 MB total, before the brotli fix; not re-profiled since).
+- If the flag is not set, the output of the serializer is stored as is (JSON for a JSON serializer). The reproduction
+  below relies on that.
+- The registry was not modified for this analysis other than adding constructors (next section).
+
+### Prototype: constructors
+
+In the working tree (not committed):
+
+- `NewRegistryWithSerializer(scheme, codec, serializer)`: the previous `NewRegistry` implementation, unchanged.
+- `NewJSONRegistry(scheme, codec)`: builds a JSON serializer (`Yaml: false, Pretty: false, Strict: false`) from the
+  scheme and calls `NewRegistryWithSerializer`.
+- `NewRegistry(scheme, codec, serializer)`: forwards to `NewRegistryWithSerializer` (behavior unchanged).
+
+Cost of building a serializer per registry: negligible. `json.NewSerializerWithOptions` is a struct fill plus a
+`json.Marshal` of a 4-key map (~0.6 us, 570 B, 11 allocs). `NewRegistry` itself costs ~78 us and ~235 KB per call (it
+iterates `scheme.AllKnownTypes()`, dedupes and sorts group versions, and builds the codec), the same with or without the
+serializer. If constructor cost ever matters, that is the part to cache.
+
+### Helper programs: `hack/registry-bench/` (untracked in the working tree on `optimize-brotli`)
+
+- `extract.sh <dir>`: writes the `data.yaml.br` of all Secrets of the current kubeconfig's cluster to `<dir>`.
+- `main.go`: decodes all extracted payloads into objects (typed where the seed scheme knows the kind, otherwise
+  unstructured, skipping kinds the codec cannot encode) and measures wall time, CPU (`getrusage`), allocation, mallocs and
+  GCs per pass. `-phase write|read`, `-mode yaml|json|json-nosep|json-leadsep|kyaml|kyaml-compact`,
+  `-iterations N`, `-cpuprofile f`. The `kyaml*` and `json-nosep`/`json-leadsep` modes replicate the registry's work in
+  the benchmark; they are not registry implementations.
+
+Input: 117 real ManagedResource secrets from the local KinD runtime cluster, 873 typed objects (15 objects skipped because
+the seed scheme cannot encode their kind, mostly CRs). `LGWin: 20` + pool as in the current branch.
+Numbers are per pass over all payloads, 3 runs per variant (20-30 passes per run).
+
+### Write path (NewRegistry + AddAllAndSerialize)
+
+| Variant                                        | wall per pass | CPU per pass | allocated  | mallocs | compressed size   |
+| ---------------------------------------------- | ------------- | ------------ | ---------- | ------- | ----------------- |
+| A: yaml (current, caller passes YAML serializer) | 221-223 ms    | 472-483 ms   | 468 MB     | 2.19 M  | 361,498 B         |
+| B: json (`NewRegistry` -> `NewJSONRegistry`)   | 33.4-33.7 ms  | 51-53 ms     | 51 MB      | 60 K    | 357,954 B (-1.0%) |
+| kyaml (replicated, JSON + `kyaml.Encoder`)     | 103-104 ms    | 171-174 ms   | 139-144 MB | 866 K   | 377,300 B (+4.4%) |
+| kyaml-compact                                  | 90-91 ms      | 155-159 ms   | 134-137 MB | 865 K   | 356,555 B (-1.4%) |
+| json, pretty (indented)                        | 42.5-42.9 ms  | not measured | 65-69 MB   | 61 K    | 385,190 B (+6.6%) |
+
+(A and B are from the first session, 30 passes per run. A second session, which also measured the kyaml rows, gave
+yaml 232-236 ms wall / 493-511 ms CPU / 468-478 MB and json 34.6-35.0 ms wall / 53-55 ms CPU / 49-51 MB, i.e. the same
+picture with some machine noise. The pretty-JSON row is from an earlier benchmark via the registry tests' serializer swap.)
+
+- JSON direct: ~6.6x less wall time, ~9x less CPU, ~9x less allocation than today, and 1% smaller compressed data.
+- Output was deterministic: 20 rounds of serializing every payload twice gave byte-identical compressed output.
+- KYAML (`sigs.k8s.io/yaml/kyaml`, same dependency as `sigs.k8s.io/yaml` v1.6.0) is a strict YAML subset (braces,
+  quoted strings, `---` header per document) and is what `kubectl get -o kyaml` prints. The encoder takes JSON, parses it
+  into `yaml.v3` nodes and renders them, so it is ~3x more expensive than JSON but ~2.3x cheaper in wall time and ~3x in
+  CPU/allocation than today. It stays readable with plain `brotli -d`.
+
+### Read path (gardener-resource-manager decoding)
+
+Measured as the GRM `managedresource` reconciler does it: `brotli.NewReader` + `yaml.NewYAMLOrJSONDecoder(reader, 1024)`
++ `Decode(&map[string]any)` for every document (873 objects per pass). Only the decoding is measured, not the rest of a
+GRM reconcile (REST mapping, unstructured, apply/diff).
+
+| Variant (read)                       | wall per pass | CPU per pass | allocated | mallocs |
+| ------------------------------------ | ------------- | ------------ | --------- | ------- |
+| yaml (current)                       | 70.9-71.8 ms  | 134 ms       | 84.0 MB   | 953 K   |
+| json, `---` between documents        | 67.6-68.8 ms  | 152-154 ms   | 111.8 MB  | 834 K   |
+| json with an additional leading `---` | 70.5-72.7 ms  | 159-164 ms   | 120.1 MB  | 878 K   |
+| json, no `---` (newline-delimited)   | 18.7-19.0 ms  | 36.5-37.8 ms | 24.4 MB   | 203 K   |
+| kyaml                                | 75.0-76.2 ms  | 141-143 ms   | 89.7 MB   | 954 K   |
+| kyaml-compact                        | 73.2-74.8 ms  | 166-170 ms   | 120 MB    | 878 K   |
+
+Why: `NewYAMLOrJSONDecoder` guesses from the first bytes (`GuessJSONStream`). If the stream looks like JSON it uses a
+`json.Decoder`. After the first document, `---` is a JSON syntax error; since only one object was seen the stream is
+still ambiguous, so the decoder rewinds and switches to the YAML-to-JSON decoder for the rest. So JSON with `---`
+separators gets **no** read benefit (and wastes a failed JSON attempt). A leading `---` makes it pick the YAML decoder
+immediately, which avoids the failed attempt but is not cheaper than today's block YAML (the YAML path converting
+JSON-looking documents is as expensive). KYAML starts with `---` too and therefore reads like YAML. Only a stream that
+stays JSON for its whole length (first byte `{`, no `---`) uses the fast `json.Decoder` path: ~3.7x less wall time and
+CPU, ~3.4x less allocation.
+
+Reads probably outnumber writes: the `managedresource` reconciler requeues after `SyncPeriod` after every run (and runs
+on changes), while the secret content only changes when a component changes. The production sync period was not looked up.
+
+### Is newline-delimited JSON valid YAML? No.
+
+Two JSON objects on separate lines without `---` are rejected as YAML: `yq -p yaml` fails with
+`did not find expected <document start>`, PyYAML raises `ParserError`. `yq -p json` and `jq` read them. The GRM decoder
+accepts it only because of its JSON-first heuristic. Storing it under `data.yaml.br` would be mislabeled. So if the
+read-side speedup is wanted, use a new key, e.g. `data.json.br` (`CompressedJSONDataKey = "data.json" + BrotliCompressionSuffix`
+next to `CompressedDataKey` in `pkg/apis/resources/v1alpha1/types.go`), and let readers choose the decoder from the key
+(JSON stream for `.json.br`, YAML for `.yaml.br`) instead of guessing.
+
+Readers found in this repo (non-test code):
+
+- GRM `managedresource` reconciler (`pkg/resourcemanager/controller/managedresource/reconciler.go`): iterates all secret
+  keys, decompresses keys with the `.br` suffix, lets the decoder guess. An already released GRM would read `data.json.br`
+  (it does not look at the rest of the key name) and, because the stream is clean JSON, on the fast path.
+- `managedresources.ExtractObjectsFromSecret` (`pkg/utils/managedresources/managedresources.go`): iterates all `.br`
+  keys but splits on `---\n`; breaks for newline-delimited JSON, needs to change.
+- `ExtractManifestsFromManagedResourceData` (`pkg/utils/test/compression.go`): looks up exactly `CompressedDataKey`,
+  needs to change.
+
+Suggested rollout (readers first, as there is time for one or two releases):
+
+1. Release N: readers choose the decoder from the key and handle both `data.yaml.br` and `data.json.br`
+   (`ExtractObjectsFromSecret`, the test helper, GRM). Writers still emit `data.yaml.br`.
+2. Release N+1 or N+2: the registry writes `data.json.br` (newline-delimited JSON).
+
+Open points to check before doing it:
+
+- Does the code that writes the ManagedResource secret replace `Data` or merge it? If it merges, an updated secret
+  could carry both keys and GRM would decode every object twice.
+- External consumers (extensions or tooling outside this repo) that read `data.yaml.br` by name.
+- Whether the registry tests and the many component tests that assert YAML text need to move to a JSON-aware assertion
+  (see Tests below).
+
+### Usability
+
+Single-line JSON is hard to read with `base64 -d | brotli -d`. Verified on a real payload (`alertmanager-garden`,
+8 objects, produced with `NewJSONRegistry`): `base64 -d | brotli -d | yq -P .` prints block-style YAML with `---`
+separators and all 8 kinds. Field order follows the JSON (struct) order (`kind`, `apiVersion`, `metadata`, ...) instead
+of alphabetical. For newline-delimited JSON, `jq .` or `yq -p json -P .` is needed (only `yq -p json` on a two-object
+sample was tested, not a real payload). Document the pipeline wherever the old hint lives.
+
+### Tests
+
+With `NewRegistry` temporarily pointing to `NewJSONRegistry` (variant B), 23 test packages failed in
+`./pkg/utils/managedresources/...`, `./pkg/component/...`, `./pkg/operator/...`, `./pkg/gardenlet/...`, `./extensions/...`
+(excluding the already failing `shootstate`), e.g. `resourcemanager`, `coredns`, `istio`, `nodelocaldns`, `fluentbit`,
+`plutono`, `seed/system`, `botanist`, `managedresources`. They assert YAML text taken from the registry. The individual
+failures were not inspected, some may have other causes. `NewRegistry` is back to forwarding to
+`NewRegistryWithSerializer`, so the working tree is green.
+
+### Other things that were evaluated
+
+- **CBOR** instead of YAML: not recommended. It changes the data contract (key, readers, tooling, docs), has the same
+  version-skew and one-time-rewrite problems, is not debuggable without a tool, and brotli on top of YAML already
+  equalizes sizes. Library support for Gardener's types was not checked. Emitting JSON gets most of the benefit without
+  a new encoding.
+- **Pooling brotli writers in `pkg/utils/test/compression.go`**: not worth it. The helper is called a handful of times per
+  spec (about 0.3 ms and 2.6 MB per call unpooled); it should stay an independent oracle for the production code. The
+  helper only needs to use the same writer options.
+
+### Recommendation
+
+1. PR 1: the brotli change in this document (pool + `LGWin: 20`), optionally pool-only to avoid the one-time rewrite.
+2. PR 2 (readers): choose the decoder by key; support `data.json.br` in `ExtractObjectsFromSecret`, the test helper and
+   GRM.
+3. PR 3 (writers, one or two releases later): `NewJSONRegistry` as the default, newline-delimited JSON in `data.json.br`,
+   test updates, docs.
+4. Before PR 3, re-profile the operator after PR 1 to rank the serialization cost against the rest of a reconcile, and
+   measure a real GRM (the read numbers above are a decoder micro-benchmark).
